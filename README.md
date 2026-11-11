@@ -1705,3 +1705,84 @@ const dotsIndex = CONFIG.dotsCol - CONFIG.sortStartCol;
 6. Сортировка блоков с одинаковыми строками и разной исходной видимостью.
 
 **Текущий вывод:** архитектура основных фильтров и Rank Scroller выглядит согласованной. Приоритет — не переписывание модулей, а завершение глобального поиска и устранение только подтверждённого дублирования/legacy-конфигурации.
+
+## Repository structure and clasp workflow
+
+This section describes the current Git repository layout. It supplements the historical architecture notes below; it does not rename, merge, or rewrite source modules.
+
+### Current source tree
+
+```text
+VT-Rank-Tracker/
+├── Config/
+│   ├── config.gs                 # CONFIG and tracked sheet names
+│   └── configUtils.gs            # Column/index and A1 helpers
+├── Core/
+│   ├── customFunctions.gs        # Spreadsheet custom functions
+│   ├── lock.gs                   # ScriptLock wrapper
+│   ├── operations.gs             # Shared operation tracing wrappers
+│   ├── triggers.gs               # onOpen, handleEdit and trigger setup
+│   └── utils.gs                  # Shared spreadsheet utilities/options
+├── Filters/
+│   ├── filterData.gs             # Input reads and row boundaries
+│   ├── filterEngine.gs           # Dots/TOP visibility calculation
+│   ├── filterOperations.gs       # Reset and multi-sheet orchestration
+│   ├── filterOptions.gs          # Options and filter tracing helpers
+│   ├── filterState.gs            # Persistent FilterState
+│   ├── filterVisibility.gs       # Physical visibility coordination
+│   ├── filters.gs                # applyFilters orchestration
+│   └── rowVisibility.gs          # Grouped row show/hide primitives
+├── Performance/
+│   └── perf.gs                   # Performance Tracer and wrappers
+├── RankScroller/
+│   ├── rankOperations.gs         # Public Rank Scroller operations
+│   ├── rankScroller.gs           # Rank Scroller orchestration
+│   ├── rankScrollerCalculator.gs # Pure Energy-to-column calculation
+│   ├── rankScrollerEngine.gs     # Per-sheet processing
+│   ├── rankScrollerState.gs      # Script Properties and dirty flags
+│   └── rankScrollerVisibility.gs # Column visibility operations
+├── Scenarios/
+│   ├── scenarioOperations.gs     # Duplicate scenario operations
+│   └── scenarios.gs              # Category merge helpers
+├── Sorting/
+│   ├── sortOperations.gs         # Manual sorting orchestration
+│   └── sorting.gs                # Scenario block sorting
+└── README.md                     # Technical documentation
+```
+
+The directory name `perfomance` is intentionally retained as currently stored in Git. Correcting its spelling would be a separate path rename and offers no functional benefit to this task.
+
+### Module boundaries and cross-module dependencies
+
+- `config/` provides global `CONFIG`, `RANK_TRACKED_SHEETS`, and A1/column helpers. These are consumed across the project.
+- `core/` is shared infrastructure. Trigger handlers route edits into filters, sorting and Rank Scroller; lock and operation wrappers call the Performance Tracer adapters.
+- `filtering/` is a coordinated subsystem: `filters.gs` orchestrates reads, state preparation, visibility calculation and persistence. FilterState and ManualState are separate logical concerns, but their metadata is read together and the physical row visibility is combined. Keep the current file split unless a later code review explicitly justifies changing it.
+- `sorting/` depends on the row-visibility and FilterState APIs from `filtering/` to preserve row visibility when rows are reordered.
+- `scenarios/` provides helpers used by scenario duplication operations. It belongs outside the filter engine.
+- `rankScroller/` separates orchestration, per-sheet processing, pure calculation, visibility and Script Properties state. `rankOperations.gs` is part of the subsystem and must not be omitted.
+- `perfomance/perf.gs` provides the instrumentation API used by core, filtering, sorting and Rank Scroller.
+- `core/customFunctions.gs` contains globally callable spreadsheet functions. File location does not scope those functions.
+
+### clasp compatibility and operational rules
+
+Google's Apps Script documentation states that `clasp` preserves directory structure when uploading project files. The clasp implementation recursively collects supported source files beneath its configured content directory unless `skipSubdirectories` is enabled. Supported source types include server-side script files and HTML files; a manifest named `appsscript.json` is handled separately. See [Google's clasp guide](https://developers.google.com/apps-script/guides/clasp), [clasp file collection implementation](https://github.com/google/clasp/blob/master/src/core/files.ts), and [clasp releases](https://github.com/google/clasp/releases).
+
+The latest release verified while updating this document is `@google/clasp 3.4.1` (2026-08-28). This is not evidence that this version is installed on every development machine.
+
+The current Git tree does not contain `.clasp.json`, `.claspignore`, `appsscript.json`, HTML files, a package manifest, or a lockfile. Therefore this repository alone does not identify the locally installed clasp version, its actual `rootDir`, `skipSubdirectories`, custom extension settings, manifest push order, or the exact local Apps Script export. Before using `clasp push` or `clasp pull` from a workstation, verify those values in that local project. Do not add guessed script IDs or clasp settings to this repository.
+
+If the local clasp project uses the repository root as its content directory, recursive subdirectory handling must remain enabled. The default ignore rules include `.gs`, `.js`, `.ts`, `.html`, and `appsscript.json`, while excluding version-control and dependency directories. A custom `.claspignore` should be added only when there is an actual file-exclusion requirement; if added, verify it against the documented root-relative glob semantics. Do not ignore any source directory.
+
+Apps Script's project file names and folders do not create JavaScript modules or isolated scopes. All top-level declarations remain in the project's global execution environment. Avoid introducing duplicate global identifiers. Apps Script does not guarantee a useful source-file execution order merely from Git directory names; if code ever depends on initialization order, configure `filePushOrder` in the local manifest using paths relative to the directory containing `.clasp.json` (including `rootDir` when applicable). No such setting can be verified from this repository's current contents.
+
+Never use `clasp push` as part of a repository-only organization change. Review the local `clasp status` output and a fresh backup before any separately authorized cloud synchronization.
+
+### Change-safety checklist
+
+1. Preserve source paths and filenames unless an independently justified rename is approved.
+2. Do not move functions between files, merge modules, or change identifiers as part of folder organization.
+3. Compare each source file's Git blob SHA before and after a move; identical SHA means identical file bytes.
+4. Preserve the full existing technical history in this README; append or correct documentation rather than replacing historical sections.
+5. Keep repository-only changes on a review branch until the owner reviews and merges them.
+
+---
