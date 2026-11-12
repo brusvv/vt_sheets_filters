@@ -1714,16 +1714,16 @@ This section describes the current Git repository layout. It supplements the his
 
 ```text
 VT-Rank-Tracker/
-├── Config/
+├── config/
 │   ├── config.gs                 # CONFIG and tracked sheet names
 │   └── configUtils.gs            # Column/index and A1 helpers
-├── Core/
+├── core/
 │   ├── customFunctions.gs        # Spreadsheet custom functions
 │   ├── lock.gs                   # ScriptLock wrapper
 │   ├── operations.gs             # Shared operation tracing wrappers
 │   ├── triggers.gs               # onOpen, handleEdit and trigger setup
 │   └── utils.gs                  # Shared spreadsheet utilities/options
-├── Filters/
+├── filtering/
 │   ├── filterData.gs             # Input reads and row boundaries
 │   ├── filterEngine.gs           # Dots/TOP visibility calculation
 │   ├── filterOperations.gs       # Reset and multi-sheet orchestration
@@ -1732,19 +1732,19 @@ VT-Rank-Tracker/
 │   ├── filterVisibility.gs       # Physical visibility coordination
 │   ├── filters.gs                # applyFilters orchestration
 │   └── rowVisibility.gs          # Grouped row show/hide primitives
-├── Performance/
+├── performance/
 │   └── perf.gs                   # Performance Tracer and wrappers
-├── RankScroller/
+├── rankscroller/
 │   ├── rankOperations.gs         # Public Rank Scroller operations
 │   ├── rankScroller.gs           # Rank Scroller orchestration
 │   ├── rankScrollerCalculator.gs # Pure Energy-to-column calculation
 │   ├── rankScrollerEngine.gs     # Per-sheet processing
 │   ├── rankScrollerState.gs      # Script Properties and dirty flags
 │   └── rankScrollerVisibility.gs # Column visibility operations
-├── Scenarios/
+├── scenarios/
 │   ├── scenarioOperations.gs     # Duplicate scenario operations
 │   └── scenarios.gs              # Category merge helpers
-├── Sorting/
+├── sorting/
 │   ├── sortOperations.gs         # Manual sorting orchestration
 │   └── sorting.gs                # Scenario block sorting
 └── README.md                     # Technical documentation
@@ -1759,8 +1759,8 @@ The directory name `perfomance` is intentionally retained as currently stored in
 - `filtering/` is a coordinated subsystem: `filters.gs` orchestrates reads, state preparation, visibility calculation and persistence. FilterState and ManualState are separate logical concerns, but their metadata is read together and the physical row visibility is combined. Keep the current file split unless a later code review explicitly justifies changing it.
 - `sorting/` depends on the row-visibility and FilterState APIs from `filtering/` to preserve row visibility when rows are reordered.
 - `scenarios/` provides helpers used by scenario duplication operations. It belongs outside the filter engine.
-- `rankScroller/` separates orchestration, per-sheet processing, pure calculation, visibility and Script Properties state. `rankOperations.gs` is part of the subsystem and must not be omitted.
-- `perfomance/perf.gs` provides the instrumentation API used by core, filtering, sorting and Rank Scroller.
+- `rankscroller/` separates orchestration, per-sheet processing, pure calculation, visibility and Script Properties state. `rankOperations.gs` is part of the subsystem and must not be omitted.
+- `performance/perf.gs` provides the instrumentation API used by core, filtering, sorting and Rank Scroller.
 - `core/customFunctions.gs` contains globally callable spreadsheet functions. File location does not scope those functions.
 
 ### clasp compatibility and operational rules
