@@ -93,11 +93,29 @@ function applyFilters(
       ? optionsValues[2][0] === true
       : getOptionBoolean_('hideEmptyScores');
 
+    // --------------------------------------------------
+    // 3. Чтение игровых данных и настроек фильтров
+    // --------------------------------------------------
+
+    let inputData = null;
+    let sortChanged = false;
+
     if (autoSortEnabled) {
-      sortScenarioBlocks(
+      // Используем уже прочитанные C:L для проверки порядка.
+      inputData = readFilterInputData_(
+        sheet,
+        sheetLastRow,
+        perfTrace
+      );
+
+      stepStarted = Date.now();
+
+      sortChanged = sortScenarioBlocks(
         sheet,
         'scoreDesc',
-        sheetLastRow
+        sheetLastRow,
+        null,
+        inputData.data
       );
     }
 
@@ -108,19 +126,26 @@ function applyFilters(
       {
         sheet: sheet.getName(),
         enabled: !skipAutoSort && autoSortEnabled,
-        hideEmptyScores: hideEmptyScores
+        hideEmptyScores: hideEmptyScores,
+        sortChanged: sortChanged
       }
     );
 
-    // --------------------------------------------------
-    // 3. Чтение игровых данных и настроек фильтров
-    // --------------------------------------------------
-
-    const inputData = readFilterInputData_(
-      sheet,
-      sheetLastRow,
-      perfTrace
-    );
+    // После Range.sort() исходный snapshot устаревает.
+    // Перечитываем только если сортировка действительно запускалась.
+    if (sortChanged) {
+      inputData = readFilterInputData_(
+        sheet,
+        sheetLastRow,
+        perfTrace
+      );
+    } else if (!inputData) {
+      inputData = readFilterInputData_(
+        sheet,
+        sheetLastRow,
+        perfTrace
+      );
+    }
 
     // --------------------------------------------------
     // 4. Определение последней игровой строки

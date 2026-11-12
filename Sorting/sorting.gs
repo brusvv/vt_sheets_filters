@@ -146,13 +146,20 @@ function inspectScenarioBlockOrder_(
  * Если не передана, определяется самостоятельно.
  *
  * knownScenarios — заранее прочитанные значения сценариев.
- * Если не переданы, считываются самостоятельно.
+ * Если не переданы, при наличии knownSortData извлекаются из него.
+ *
+ * knownSortData — заранее прочитанные строки C:L, начиная с
+ * CONFIG.firstRow. Используется только при совпадении количества
+ * строк и ширины с ожидаемым диапазоном.
+ *
+ * @return {boolean} true, если хотя бы один блок был отсортирован.
  */
 function sortScenarioBlocks(
   sheet,
   sortType = 'scoreDesc',
   knownLastRow = null,
-  knownScenarios = null
+  knownScenarios = null,
+  knownSortData = null
 ) {
   const totalStarted = Date.now();
 
@@ -167,38 +174,51 @@ function sortScenarioBlocks(
     ? knownLastRow
     : sheet.getLastRow();
 
-  if (lastRow < CONFIG.firstRow) return;
+  if (lastRow < CONFIG.firstRow) return false;
 
   const numRows = lastRow - CONFIG.firstRow + 1;
+
+  // Повторно используем снимок C:L, если он соответствует диапазону.
+  const hasKnownSortData =
+    Array.isArray(knownSortData) &&
+    knownSortData.length === numRows &&
+    knownSortData.every(row =>
+      Array.isArray(row) &&
+      row.length >= CONFIG.sortWidth
+    );
 
   // 1. Получение сценариев
   const scenarioReadStarted = Date.now();
 
   const scenarios = knownScenarios !== null
     ? knownScenarios
-    : sheet
-        .getRange(
-          CONFIG.firstRow,
-          CONFIG.scenarioCol,
-          numRows,
-          1
-        )
-        .getValues();
+    : hasKnownSortData
+      ? knownSortData.map(row => [row[0]])
+      : sheet
+          .getRange(
+            CONFIG.firstRow,
+            CONFIG.scenarioCol,
+            numRows,
+            1
+          )
+          .getValues();
 
   const scenarioReadDuration =
     Date.now() - scenarioReadStarted;
 
-  // 2. Пакетное чтение всего сортируемого диапазона
+  // 2. Получение всего сортируемого диапазона
   const dataReadStarted = Date.now();
 
-  const allSortValues = sheet
-    .getRange(
-      CONFIG.firstRow,
-      CONFIG.sortStartCol,
-      numRows,
-      CONFIG.sortWidth
-    )
-    .getValues();
+  const allSortValues = hasKnownSortData
+    ? knownSortData
+    : sheet
+        .getRange(
+          CONFIG.firstRow,
+          CONFIG.sortStartCol,
+          numRows,
+          CONFIG.sortWidth
+        )
+        .getValues();
 
   const dataReadDuration = Date.now() - dataReadStarted;
 
@@ -418,4 +438,6 @@ function sortScenarioBlocks(
 
     totalDurationMs: Date.now() - totalStarted
   }));
+
+  return sortCalls > 0;
 }

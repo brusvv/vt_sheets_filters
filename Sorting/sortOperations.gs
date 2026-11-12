@@ -253,11 +253,6 @@ function runManualSortOperation_(
           originalVisibility
         );
 
-      // Сценарии уже прочитаны вместе с C:L.
-      const scenarios = originalData.map(row => [
-        row[0]
-      ]);
-
       operationPerfStep_(
         trace,
         'Save original data and visibility',
@@ -274,11 +269,12 @@ function runManualSortOperation_(
 
       stepStarted = Date.now();
 
-      sortScenarioBlocks(
+      const sortChanged = sortScenarioBlocks(
         sheet,
         sortType,
         lastRow,
-        scenarios
+        null,
+        originalData
       );
 
       SpreadsheetApp.flush();
@@ -300,14 +296,16 @@ function runManualSortOperation_(
 
       stepStarted = Date.now();
 
-      const sortedData = sheet
-        .getRange(
-          CONFIG.firstRow,
-          CONFIG.sortStartCol,
-          numRows,
-          CONFIG.sortWidth
-        )
-        .getValues();
+      const sortedData = sortChanged
+        ? sheet
+            .getRange(
+              CONFIG.firstRow,
+              CONFIG.sortStartCol,
+              numRows,
+              CONFIG.sortWidth
+            )
+            .getValues()
+        : originalData;
 
       operationPerfStep_(
         trace,
@@ -315,7 +313,8 @@ function runManualSortOperation_(
         stepStarted,
         {
           sheet: sheetName,
-          rows: numRows
+          rows: numRows,
+          reusedOriginalData: !sortChanged
         }
       );
 
