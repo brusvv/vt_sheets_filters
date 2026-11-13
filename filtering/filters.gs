@@ -99,24 +99,68 @@ function applyFilters(
 
     let inputData = null;
     let sortChanged = false;
+    let sortVisibilityContext = null;
 
     if (autoSortEnabled) {
-      // Используем уже прочитанные C:L для проверки порядка.
       inputData = readFilterInputData_(
         sheet,
         sheetLastRow,
         perfTrace
       );
 
-      stepStarted = Date.now();
+      const sortLastRow = getLastScenarioRowFromData(inputData.data);
 
-      sortChanged = sortScenarioBlocks(
-        sheet,
-        'scoreDesc',
-        sheetLastRow,
-        null,
-        inputData.data
-      );
+      if (sortLastRow >= CONFIG.firstRow) {
+        const sortRowCount = sortLastRow - CONFIG.firstRow + 1;
+        const sortData = inputData.data
+          .slice(0, sortRowCount)
+          .map(row => row.slice(0, CONFIG.sortWidth));
+
+        stepStarted = Date.now();
+
+        // Resolve the physical visibility before resetVisibility/showRows.
+        sortVisibilityContext = readSortVisibilityContext_(
+          sheet,
+          sortLastRow,
+          sortData
+        );
+
+        const sortResult = sortScenarioBlocksDetailed_(
+          sheet,
+          'scoreDesc',
+          sortLastRow,
+          null,
+          sortData,
+          sortVisibilityContext
+        );
+
+        sortChanged = sortResult.applied === true;
+
+        triggerPerfEvent_(
+          perfTrace,
+          'AUTO_SORT_PLAN',
+          {
+            sheet: sheet.getName(),
+            status: sortResult.status,
+            reason: sortResult.reason || null,
+            changed: Boolean(sortResult.plan && sortResult.plan.changed),
+            applied: sortChanged
+          }
+        );
+
+      } else {
+        triggerPerfEvent_(
+          perfTrace,
+          'AUTO_SORT_PLAN',
+          {
+            sheet: sheet.getName(),
+            status: 'NO_OP',
+            reason: 'NO_SCENARIO_DATA',
+            changed: false,
+            applied: false
+          }
+        );
+      }
     }
 
     filterPerfStep_(
@@ -205,6 +249,26 @@ function applyFilters(
     // 6. Построение новой фильтрационной видимости
     // --------------------------------------------------
 
+    let resolvedManualHiddenRows = null;
+
+    if (
+      sortVisibilityContext &&
+      sortVisibilityContext.ok &&
+      sortManualCountsEqual_(
+        sortVisibilityContext.manualKeyCounts,
+        filterState.manualHiddenCounts
+      )
+    ) {
+      resolvedManualHiddenRows = sortVisibilityContext.manualHiddenRows;
+
+    } else if (sortVisibilityContext && sortVisibilityContext.ok) {
+      triggerPerfEvent_(
+        perfTrace,
+        'SORT_VISIBILITY_CONTEXT_STALE',
+        { sheet: sheet.getName() }
+      );
+    }
+
     const visibilityData = buildFilterVisibility_(
       inputData.data,
       inputData.selectedDots,
@@ -212,7 +276,8 @@ function applyFilters(
       hideEmptyScores,
       sheet,
       filterState.manualHiddenCounts,
-      perfTrace
+      perfTrace,
+      resolvedManualHiddenRows
     );
 
     // --------------------------------------------------

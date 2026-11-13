@@ -1786,3 +1786,50 @@ Never use `clasp push` as part of a repository-only organization change. Review 
 5. Keep repository-only changes on a review branch until the owner reviews and merges them.
 
 ---
+
+
+---
+
+## Safe visible-row sorting (fail-closed transfer phase)
+
+### Architecture
+
+Visible sorting is separated into three components:
+
+- `sorting/sortVisibility.gs` reads the existing FilterState, ManualState, and physical row metadata. It is read-only: it does not create or migrate `_FilterState`, write fallback visibility, or mutate ManualState.
+- `sorting/visibleSortPlan.gs` builds a deterministic in-memory permutation of visible physical slots within each contiguous scenario block. It never accesses Sheets services.
+- `sorting/sorting.gs` accepts only a freshly prepared visibility context, validates it against the exact C:L snapshot, and produces the plan. It does not resolve hidden-row causes itself. The transfer phase deliberately returns `TRANSFER_NOT_VERIFIED` for a plan that requires movement.
+
+### Hidden-position protection
+
+The resolver requires a valid FilterState header and range, a valid ManualState header/count, Boolean FilterState cells, and row-level physical visibility flags. It rejects basic-filter hidden rows and any mismatch between FilterState and physical visibility.
+
+ManualState duplicate keys are mapped to physical positions only when the number of physically hidden rows with the same C:L key and FilterState=true exactly matches the stored frequency. An unmatched key, stale count, or untracked hidden row blocks sorting. The existing ManualState storage format is unchanged.
+
+The plan contains source and destination row numbers only for visible slots. Assertions verify that each source and destination is visible, unique, inside the same scenario block, and that source and destination sets are equal. Hidden positions are never plan entries.
+
+### Ordering
+
+- `scoreDesc`: numeric Score descending, then ASCII Dots ascending, then original row order.
+- `scoreAsc`: numeric Score ascending, then ASCII Dots ascending, then original row order.
+- `dots`: ASCII Dots ascending, then original row order.
+- Blank Score values remain at the end of Score-based sorts and retain their original order relative to each other.
+- Non-numeric/non-finite Score and empty/non-ASCII Dots fail closed.
+
+### Transfer status
+
+The previous full-block `Range.sort()` path is no longer used. AutoSort and ManualSort explicitly call the read-only resolver before invoking the planner. ManualSort no longer restores row visibility or rewrites FilterState after sorting. A changed plan returns `TRANSFER_NOT_VERIFIED` and performs no writes. The legacy Boolean `sortScenarioBlocks()` returns `false` only for a no-op; when a structured abort or unverified transfer occurs it throws a diagnostic error, because those outcomes must not be confused with an ordinary no-op.
+
+This is intentional: there is no real source → staging → destination round-trip result proving preservation of every required C:L property. `PASTE_NORMAL`, `PASTE_DATA_VALIDATION`, and `Range.copyTo()` remain unverified for the full required contract. There is no fallback to `Range.sort()`.
+
+### Concurrency and error behavior
+
+The resolver and planner are read-only. A preflight failure blocks sorting and leaves C:L, physical visibility, FilterState, and ManualState unchanged. ScriptLock continues to serialize cooperating script executions, but does not lock out UI edits. Strict optimistic pre-commit validation and rollback remain deferred until a transfer method is selected and verified.
+
+### Unit tests
+
+Tests use the Node built-in test runner and load Apps Script source into an isolated VM:
+
+    node --test tests/*.test.cjs
+
+The repository includes a GitHub Actions workflow that runs this suite on pushes to `chore/organize-repository` and on pull requests. These are local/unit tests, not live Google Sheets API experiments. They do not prove formula relocation, rich text/notes/validation preservation, batchUpdate atomicity in the live workbook, or live concurrency.

@@ -25,7 +25,8 @@ function buildFilterVisibility_(
   hideEmptyScores,
   sheet,
   manualHiddenCounts,
-  perfTrace
+  perfTrace,
+  resolvedManualHiddenRows = null
 ) {
   // --------------------------------------------------
   // Применение Dots и формирование групп
@@ -59,15 +60,16 @@ function buildFilterVisibility_(
       return;
     }
 
-    // Ручные исключения исключаются ДО Dots и TOP.
+    // Use physical positions from a validated resolver snapshot when available.
+    // Other callers retain the established FIFO ManualState behavior.
+    const isManualHidden = resolvedManualHiddenRows instanceof Set
+      ? resolvedManualHiddenRows.has(sheetRow)
+      : (
+          manualHiddenCounts.size > 0 &&
+          consumeManualHiddenKey_(row, manualHiddenCounts)
+        );
 
-    if (
-      manualHiddenCounts.size > 0 &&
-      consumeManualHiddenKey_(
-        row,
-        manualHiddenCounts
-      )
-    ) {
+    if (isManualHidden) {
       manualRowsToHide.add(sheetRow);
       manuallyHiddenRows.add(sheetRow);
       return;

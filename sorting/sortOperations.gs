@@ -167,6 +167,19 @@ function restoreSortedRowVisibility_(
  *
  * applyFilters() не запускается.
  */
+/**
+ * Manual sort entry point.
+ *
+ * It builds a validated visible-row plan but does not write any cell until
+ * full C:L source -> staging -> destination fidelity is verified.
+ */
+/**
+ * Manual sort entry point. The resolver produces the visibility snapshot;
+ * the sorter only consumes it and never reinterprets physical visibility.
+ *
+ * No transfer is attempted until full C:L staging round-trip fidelity is
+ * verified on a disposable Google workbook.
+ */
 function runManualSortOperation_(
   operation,
   sortType,
@@ -174,218 +187,110 @@ function runManualSortOperation_(
 ) {
   const trace = triggerPerfStart_(
     operation,
-    {
-      sortType: sortType
-    }
+    { sortType: sortType }
   );
 
   let status = 'SUCCESS';
   let error = null;
 
   try {
-    return withProjectLock(function() {
-      const spreadsheet =
-        SpreadsheetApp.getActiveSpreadsheet();
-
-      const sheet = getTargetSheet(
-        null,
-        spreadsheet
-      );
-
-      const sheetName = sheet.getName();
-
-      // --------------------------------------------------
-      // 1. Получение последней строки
-      // --------------------------------------------------
-
-      let stepStarted = Date.now();
-
-      const lastRow = sheet.getLastRow();
+    const result = withProjectLock(function() {
+      const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+      const sheet = getTargetSheet(null, spreadsheet);
+      const sheetLastRow = sheet.getLastRow();
 
       operationPerfStep_(
         trace,
         'Get last row',
-        stepStarted,
-        {
-          sheet: sheetName,
-          lastRow: lastRow
-        }
+        Date.now(),
+        { sheet: sheet.getName(), lastRow: sheetLastRow }
       );
 
-      if (lastRow < CONFIG.firstRow) {
-        spreadsheet.toast(
-          'No data to sort',
-          'Sorting',
-          3
-        );
-
-        return;
+      if (sheetLastRow < CONFIG.firstRow) {
+        spreadsheet.toast('No data to sort', 'Sorting', 3);
+        return { status: 'NO_OP', applied: false, reason: 'NO_DATA' };
       }
 
-      const numRows =
-        lastRow - CONFIG.firstRow + 1;
+      const upperRowCount = sheetLastRow - CONFIG.firstRow + 1;
+      const allData = sheet.getRange(
+        CONFIG.firstRow,
+        CONFIG.sortStartCol,
+        upperRowCount,
+        CONFIG.sortWidth
+      ).getValues();
 
-      // --------------------------------------------------
-      // 2. Сохранение исходных данных и видимости
-      // --------------------------------------------------
+      const lastScenarioRow = getLastScenarioRowFromData(allData);
+      if (lastScenarioRow < CONFIG.firstRow) {
+        spreadsheet.toast('No data to sort', 'Sorting', 3);
+        return {
+          status: 'NO_OP',
+          applied: false,
+          reason: 'NO_SCENARIO_DATA'
+        };
+      }
 
-      stepStarted = Date.now();
+      const rowCount = lastScenarioRow - CONFIG.firstRow + 1;
+      const sortData = allData
+        .slice(0, rowCount)
+        .map(row => row.slice(0, CONFIG.sortWidth));
 
-      const originalData = sheet
-        .getRange(
-          CONFIG.firstRow,
-          CONFIG.sortStartCol,
-          numRows,
-          CONFIG.sortWidth
-        )
-        .getValues();
-
-      const originalVisibility =
-        getPreviousVisibility(
-          sheet,
-          numRows,
-          lastRow
-        );
-
-      const visibilityQueues =
-        buildSortVisibilityQueues_(
-          originalData,
-          originalVisibility
-        );
-
-      operationPerfStep_(
-        trace,
-        'Save original data and visibility',
-        stepStarted,
-        {
-          sheet: sheetName,
-          rows: numRows
-        }
+      const visibilityContext = readSortVisibilityContext_(
+        sheet,
+        lastScenarioRow,
+        sortData
       );
 
-      // --------------------------------------------------
-      // 3. Сортировка сценариев
-      // --------------------------------------------------
-
-      stepStarted = Date.now();
-
-      const sortChanged = sortScenarioBlocks(
+      const sortResult = sortScenarioBlocksDetailed_(
         sheet,
         sortType,
-        lastRow,
+        lastScenarioRow,
         null,
-        originalData
+        sortData,
+        visibilityContext
       );
 
-      SpreadsheetApp.flush();
+      triggerPerfEvent_(trace, 'MANUAL_SORT_PLAN', {
+        sheet: sheet.getName(),
+        status: sortResult.status,
+        reason: sortResult.reason || null,
+        changed: Boolean(sortResult.plan && sortResult.plan.changed),
+        applied: sortResult.applied === true
+      });
 
-      operationPerfStep_(
-        trace,
-        'Sort scenario blocks',
-        stepStarted,
-        {
-          sheet: sheetName,
-          sortType: sortType,
-          lastRow: lastRow
-        }
-      );
-
-      // --------------------------------------------------
-      // 4. Чтение отсортированных данных
-      // --------------------------------------------------
-
-      stepStarted = Date.now();
-
-      const sortedData = sortChanged
-        ? sheet
-            .getRange(
-              CONFIG.firstRow,
-              CONFIG.sortStartCol,
-              numRows,
-              CONFIG.sortWidth
-            )
-            .getValues()
-        : originalData;
-
-      operationPerfStep_(
-        trace,
-        'Read sorted data',
-        stepStarted,
-        {
-          sheet: sheetName,
-          rows: numRows,
-          reusedOriginalData: !sortChanged
-        }
-      );
-
-      // --------------------------------------------------
-      // 5. Восстановление видимости
-      // --------------------------------------------------
-
-      stepStarted = Date.now();
-
-      const newVisibility =
-        restoreSortedRowVisibility_(
-          sheet,
-          sortedData,
-          visibilityQueues,
-          originalVisibility,
-          lastRow
+      if (sortResult.status === 'TRANSFER_NOT_VERIFIED') {
+        spreadsheet.toast(
+          'Sorting not applied: full C:L staging transfer has not passed real Google Sheets round-trip verification.',
+          'Sorting',
+          6
         );
+        status = 'TRANSFER_NOT_VERIFIED';
 
-      const visibleCount = newVisibility.filter(
-        value => value === true
-      ).length;
+      } else if (sortResult.status === 'NO_OP') {
+        spreadsheet.toast('Rows are already sorted.', 'Sorting', 3);
 
-      const hiddenCount =
-        newVisibility.length - visibleCount;
+      } else if (sortResult.status !== 'SUCCESS') {
+        spreadsheet.toast(
+          'Sorting skipped: ' + (sortResult.reason || sortResult.status),
+          'Sorting',
+          5
+        );
+        status = sortResult.status;
 
-      operationPerfStep_(
-        trace,
-        'Restore row visibility',
-        stepStarted,
-        {
-          sheet: sheetName,
-          visibleRows: visibleCount,
-          hiddenRows: hiddenCount
-        }
-      );
+      } else {
+        spreadsheet.toast(toastMessage, 'Sorting', 3);
+      }
 
-      // --------------------------------------------------
-      // 6. Синхронизация таблицы
-      // --------------------------------------------------
-
-      stepStarted = Date.now();
-
-      SpreadsheetApp.flush();
-
-      operationPerfStep_(
-        trace,
-        'Spreadsheet flush',
-        stepStarted
-      );
-
-      spreadsheet.toast(
-        toastMessage,
-        'Sorting',
-        3
-      );
-
+      return sortResult;
     }, trace);
+
+    return result;
 
   } catch (caughtError) {
     status = 'ERROR';
     error = caughtError;
-
     throw caughtError;
 
   } finally {
-    operationPerfEnd_(
-      trace,
-      status,
-      error
-    );
+    operationPerfEnd_(trace, status, error);
   }
 }
-
-

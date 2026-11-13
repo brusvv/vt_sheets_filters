@@ -154,290 +154,210 @@ function inspectScenarioBlockOrder_(
  *
  * @return {boolean} true, если хотя бы один блок был отсортирован.
  */
+/**
+ * Builds and validates a visible-slot permutation without mutating the sheet.
+ *
+ * Transfer is blocked until full C:L round-trip fidelity has been verified in
+ * a real disposable Google workbook.
+ */
+/**
+ * Builds and validates the visible-slot permutation without mutating the sheet.
+ *
+ * The caller must supply a freshly read visibility context. This function does
+ * not infer the cause of hidden rows and never calls a visibility resolver.
+ * Transfer is blocked until full C:L round-trip fidelity is verified live.
+ */
+function sortScenarioBlocksDetailed_(
+  sheet,
+  sortType = 'scoreDesc',
+  knownLastRow = null,
+  knownScenarios = null,
+  knownSortData = null,
+  knownVisibilityMask = null
+) {
+  if (!['scoreDesc', 'scoreAsc', 'dots'].includes(sortType)) {
+    throw new Error('Неизвестный тип сортировки: ' + sortType);
+  }
+
+  if (!sheet) {
+    return { status: 'BLOCKED_INPUT', applied: false, reason: 'SORT_SHEET_MISSING' };
+  }
+
+  const upperLastRow = knownLastRow !== null
+    ? knownLastRow
+    : sheet.getLastRow();
+
+  if (!Number.isInteger(upperLastRow)) {
+    return { status: 'BLOCKED_INPUT', applied: false, reason: 'INVALID_LAST_ROW' };
+  }
+  if (upperLastRow < CONFIG.firstRow) {
+    return { status: 'NO_OP', applied: false, reason: 'NO_DATA' };
+  }
+
+  const upperRowCount = upperLastRow - CONFIG.firstRow + 1;
+  const canReuseSnapshot =
+    Array.isArray(knownSortData) &&
+    knownSortData.length === upperRowCount &&
+    knownSortData.every(row =>
+      Array.isArray(row) && row.length >= CONFIG.sortWidth
+    );
+
+  const allData = canReuseSnapshot
+    ? knownSortData.map(row => row.slice(0, CONFIG.sortWidth))
+    : sheet.getRange(
+        CONFIG.firstRow,
+        CONFIG.sortStartCol,
+        upperRowCount,
+        CONFIG.sortWidth
+      ).getValues();
+
+  const lastScenarioRow = getLastScenarioRowFromData(allData);
+  if (lastScenarioRow < CONFIG.firstRow) {
+    return { status: 'NO_OP', applied: false, reason: 'NO_SCENARIO_DATA' };
+  }
+
+  const rowCount = lastScenarioRow - CONFIG.firstRow + 1;
+  const data = allData.slice(0, rowCount);
+
+  if (knownScenarios !== null) {
+    if (
+      !Array.isArray(knownScenarios) ||
+      knownScenarios.length < rowCount ||
+      !knownScenarios.slice(0, rowCount).every(row =>
+        Array.isArray(row) && row.length > 0
+      )
+    ) {
+      return {
+        status: 'BLOCKED_INPUT',
+        applied: false,
+        reason: 'KNOWN_SCENARIOS_RANGE_MISMATCH'
+      };
+    }
+
+    for (let index = 0; index < rowCount; index++) {
+      const supplied = String(knownScenarios[index][0] || '').trim();
+      const actual = String(data[index][0] || '').trim();
+
+      if (supplied !== actual) {
+        return {
+          status: 'BLOCKED_INPUT',
+          applied: false,
+          reason: 'KNOWN_SCENARIOS_SNAPSHOT_MISMATCH',
+          row: CONFIG.firstRow + index
+        };
+      }
+    }
+  }
+
+  const visibilityValidation = validateSortVisibilityContext_(
+    knownVisibilityMask,
+    sheet,
+    data,
+    CONFIG.firstRow,
+    lastScenarioRow
+  );
+
+  if (!visibilityValidation.ok) {
+    return {
+      status: 'BLOCKED_VISIBILITY',
+      applied: false,
+      reason: visibilityValidation.reason,
+      visibilityContext: knownVisibilityMask || null
+    };
+  }
+
+  try {
+    const plan = buildVisibleScenarioSortPlan_(
+      data,
+      CONFIG.firstRow,
+      lastScenarioRow,
+      knownVisibilityMask,
+      sortType
+    );
+
+    if (!plan.changed) {
+      return {
+        status: 'NO_OP',
+        applied: false,
+        reason: 'ALREADY_SORTED_OR_NOT_ENOUGH_VISIBLE_ROWS',
+        plan: plan,
+        visibilityContext: knownVisibilityMask,
+        fingerprint: knownVisibilityMask.stateFingerprint
+      };
+    }
+
+    console.warn('[VISIBLE SORT] TRANSFER_NOT_VERIFIED', JSON.stringify({
+      sheet: sheet.getName(),
+      sortType: sortType,
+      blocks: plan.blocks.length,
+      visibleRows: plan.blocks.reduce(
+        (total, block) => total + block.visibleRows.length,
+        0
+      ),
+      reason: 'FULL_CELL_STAGING_ROUND_TRIP_NOT_VERIFIED'
+    }));
+
+    return {
+      status: 'TRANSFER_NOT_VERIFIED',
+      applied: false,
+      reason: 'FULL_CELL_STAGING_ROUND_TRIP_NOT_VERIFIED',
+      plan: plan,
+      visibilityContext: knownVisibilityMask,
+      fingerprint: knownVisibilityMask.stateFingerprint
+    };
+
+  } catch (error) {
+    return {
+      status: 'BLOCKED_PLAN',
+      applied: false,
+      reason: error && error.message ? error.message : String(error),
+      visibilityContext: knownVisibilityMask
+    };
+  }
+}
+
+/**
+ * Backward-compatible public Boolean entry point.
+ *
+ * The first five arguments keep their H1 meaning. A fresh, validated sixth
+ * visibility snapshot is mandatory. Structured callers should use the
+ * detailed function so they can handle NO_OP/abort statuses explicitly.
+ */
 function sortScenarioBlocks(
   sheet,
   sortType = 'scoreDesc',
   knownLastRow = null,
   knownScenarios = null,
-  knownSortData = null
+  knownSortData = null,
+  knownVisibilityMask = null
 ) {
-  const totalStarted = Date.now();
+  const result = sortScenarioBlocksDetailed_(
+    sheet,
+    sortType,
+    knownLastRow,
+    knownScenarios,
+    knownSortData,
+    knownVisibilityMask
+  );
 
-  // 0. Проверка типа сортировки
-  if (!['scoreDesc', 'scoreAsc', 'dots'].includes(sortType)) {
-    throw new Error(
-      'Неизвестный тип сортировки: ' + sortType
+  if (result.status === 'NO_OP') return false;
+
+  if (result.status === 'TRANSFER_NOT_VERIFIED') {
+    const transferError = new Error(
+      'Сортировка отменена: перенос C:L через staging не подтверждён реальным round-trip.'
     );
+    transferError.code = result.reason;
+    throw transferError;
   }
 
-  const lastRow = knownLastRow !== null
-    ? knownLastRow
-    : sheet.getLastRow();
-
-  if (lastRow < CONFIG.firstRow) return false;
-
-  const numRows = lastRow - CONFIG.firstRow + 1;
-
-  // Повторно используем снимок C:L, если он соответствует диапазону.
-  const hasKnownSortData =
-    Array.isArray(knownSortData) &&
-    knownSortData.length === numRows &&
-    knownSortData.every(row =>
-      Array.isArray(row) &&
-      row.length >= CONFIG.sortWidth
+  if (result.status !== 'SUCCESS' || result.applied !== true) {
+    const sortError = new Error(
+      'Сортировка отменена preflight-проверкой: ' +
+      (result.reason || result.status)
     );
-
-  // 1. Получение сценариев
-  const scenarioReadStarted = Date.now();
-
-  const scenarios = knownScenarios !== null
-    ? knownScenarios
-    : hasKnownSortData
-      ? knownSortData.map(row => [row[0]])
-      : sheet
-          .getRange(
-            CONFIG.firstRow,
-            CONFIG.scenarioCol,
-            numRows,
-            1
-          )
-          .getValues();
-
-  const scenarioReadDuration =
-    Date.now() - scenarioReadStarted;
-
-  // 2. Получение всего сортируемого диапазона
-  const dataReadStarted = Date.now();
-
-  const allSortValues = hasKnownSortData
-    ? knownSortData
-    : sheet
-        .getRange(
-          CONFIG.firstRow,
-          CONFIG.sortStartCol,
-          numRows,
-          CONFIG.sortWidth
-        )
-        .getValues();
-
-  const dataReadDuration = Date.now() - dataReadStarted;
-
-  let sortCalls = 0;
-  let sortedRows = 0;
-  let sortDuration = 0;
-
-  let checkedBlocks = 0;
-  let skippedBlocks = 0;
-  let skippedRows = 0;
-
-  const blockDiagnostics = [];
-
-  const scoreIndex =
-    CONFIG.scoreCol - CONFIG.sortStartCol;
-
-  const dotsIndex =
-    CONFIG.dotsCol - CONFIG.sortStartCol;
-
-  // Проверка корректности индексов внутри диапазона
-  if (
-    dotsIndex < 0 ||
-    dotsIndex >= CONFIG.sortWidth
-  ) {
-    throw new Error(
-      'CONFIG.dotsCol находится за пределами CONFIG.sortStartCol / sortWidth'
-    );
+    sortError.code = result.reason || result.status;
+    throw sortError;
   }
 
-  if (
-    sortType !== 'dots' &&
-    (
-      scoreIndex < 0 ||
-      scoreIndex >= CONFIG.sortWidth
-    )
-  ) {
-    throw new Error(
-      'CONFIG.scoreCol находится за пределами CONFIG.sortStartCol / sortWidth'
-    );
-  }
-
-  /**
-   * Проверяет и при необходимости сортирует один блок.
-   *
-   * offset — индекс первой строки блока
-   * относительно allSortValues.
-   */
-  function sortBlock(
-    startRow,
-    endRow,
-    scenarioName,
-    offset
-  ) {
-    const blockLength = endRow - startRow + 1;
-
-    if (blockLength < 2) return;
-
-    // Данные берутся из уже прочитанного массива.
-    // Дополнительного обращения к Google Sheets нет.
-    const blockValues = allSortValues.slice(
-      offset,
-      offset + blockLength
-    );
-
-    checkedBlocks++;
-
-    const inspection = inspectScenarioBlockOrder_(
-      blockValues,
-      sortType,
-      scoreIndex,
-      dotsIndex
-    );
-
-    if (inspection.sorted) {
-      skippedBlocks++;
-      skippedRows += blockLength;
-      return;
-    }
-
-    const range = sheet.getRange(
-      startRow,
-      CONFIG.sortStartCol,
-      blockLength,
-      CONFIG.sortWidth
-    );
-
-    const sortStarted = Date.now();
-
-    if (sortType === 'scoreDesc') {
-      range.sort([
-        {
-          column: CONFIG.scoreCol,
-          ascending: false
-        },
-        {
-          column: CONFIG.dotsCol,
-          ascending: true
-        }
-      ]);
-
-    } else if (sortType === 'scoreAsc') {
-      range.sort([
-        {
-          column: CONFIG.scoreCol,
-          ascending: true
-        },
-        {
-          column: CONFIG.dotsCol,
-          ascending: true
-        }
-      ]);
-
-    } else if (sortType === 'dots') {
-      range.sort({
-        column: CONFIG.dotsCol,
-        ascending: true
-      });
-    }
-
-    sortDuration += Date.now() - sortStarted;
-    sortCalls++;
-    sortedRows += blockLength;
-
-    // Подробная информация только о блоках,
-    // которые действительно пришлось сортировать.
-    blockDiagnostics.push({
-      scenario: scenarioName,
-      startRow: startRow,
-      endRow: endRow,
-      rows: blockLength,
-      reason: inspection.reason,
-      mismatchRow: inspection.mismatchIndex !== null
-        ? startRow + inspection.mismatchIndex
-        : null
-    });
-  }
-
-  // 3. Поиск последовательных блоков сценариев
-  let blockStart = null;
-  let currentScenario = '';
-
-  for (let i = 0; i < scenarios.length; i++) {
-    const scenario = String(scenarios[i][0] || '').trim();
-    const currentRow = CONFIG.firstRow + i;
-
-    // Пустая строка завершает текущий блок
-    if (!scenario) {
-      if (blockStart !== null) {
-        const offset = blockStart - CONFIG.firstRow;
-
-        sortBlock(
-          blockStart,
-          currentRow - 1,
-          currentScenario,
-          offset
-        );
-      }
-
-      blockStart = null;
-      currentScenario = '';
-      continue;
-    }
-
-    // Начало нового блока
-    if (blockStart === null) {
-      blockStart = currentRow;
-      currentScenario = scenario;
-      continue;
-    }
-
-    // Смена сценария — обрабатываем предыдущий блок
-    if (scenario !== currentScenario) {
-      const offset = blockStart - CONFIG.firstRow;
-
-      sortBlock(
-        blockStart,
-        currentRow - 1,
-        currentScenario,
-        offset
-      );
-
-      blockStart = currentRow;
-      currentScenario = scenario;
-    }
-  }
-
-  // 4. Последний блок
-  if (blockStart !== null) {
-    const offset = blockStart - CONFIG.firstRow;
-
-    sortBlock(
-      blockStart,
-      CONFIG.firstRow + scenarios.length - 1,
-      currentScenario,
-      offset
-    );
-  }
-
-  // 5. Диагностика производительности
-  console.log('[SORT DIAGNOSTICS]', JSON.stringify({
-    sheet: sheet.getName(),
-    sortType: sortType,
-    rows: numRows,
-
-    scenarioReadDurationMs: scenarioReadDuration,
-    sortDataReadDurationMs: dataReadDuration,
-
-    checkedBlocks: checkedBlocks,
-    skippedBlocks: skippedBlocks,
-    skippedRows: skippedRows,
-
-    sortCalls: sortCalls,
-    sortedRows: sortedRows,
-    sortDurationMs: sortDuration,
-
-    blockDiagnostics: blockDiagnostics,
-
-    totalDurationMs: Date.now() - totalStarted
-  }));
-
-  return sortCalls > 0;
+  return true;
 }
