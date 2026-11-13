@@ -587,9 +587,14 @@ function perfLog_(type, trace, data = {}) {
 function perfLockWait_(trace, duration) {
   if (!trace) return;
 
-  perfEvent_(trace, 'LOCK_ACQUIRED', {
-    waitMs: duration
-  });
+  try {
+    if (typeof perfEvent_ !== 'function') return;
+    perfEvent_(trace, 'LOCK_ACQUIRED', {
+      waitMs: duration
+    });
+  } catch (error) {
+    // Lock diagnostics are best-effort and must never escape.
+  }
 }
 
 

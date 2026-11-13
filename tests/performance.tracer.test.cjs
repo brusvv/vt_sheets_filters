@@ -80,10 +80,13 @@ test('all compatibility wrappers swallow injected tracer failures', () => {
   assert.doesNotThrow(() => context.triggerPerfEnd_({ mode: 'DEBUG' }));
 });
 
-test('perfLockWait is fail-safe even when the event wrapper itself throws', () => {
+test('perfLockWait is fail-safe when its underlying event method throws or is unavailable', () => {
   const context = loadTracer();
-  context.triggerPerfEvent_ = () => { throw new Error('wrapper failure'); };
+  context.perfEvent_ = () => { throw new Error('event failure'); };
 
+  assert.doesNotThrow(() => context.perfLockWait_({ mode: 'INFO' }, 12));
+
+  context.perfEvent_ = undefined;
   assert.doesNotThrow(() => context.perfLockWait_({ mode: 'INFO' }, 12));
 });
 
