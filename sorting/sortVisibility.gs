@@ -1,17 +1,4 @@
 /**
- * Optional tracer bridge for sorting diagnostics. Some isolated test/runtime
- * contexts intentionally omit Performance Tracer; diagnostics stay optional.
- */
-function sortPerfStep_(trace, name, startedAt, metadata = {}) {
-  if (!trace || typeof triggerPerfStep_ !== 'function') return;
-  try {
-    triggerPerfStep_(trace, name, startedAt, metadata);
-  } catch (error) {
-    // Sort/resolve behavior must never depend on diagnostic code.
-  }
-}
-
-/**
  * READ-ONLY VISIBILITY RESOLVER FOR PINNED SORTING.
  *
  * Never creates or migrates FilterState, writes fallback state, or mutates
