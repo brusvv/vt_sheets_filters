@@ -173,7 +173,8 @@ function sortScenarioBlocksDetailed_(
   knownLastRow = null,
   knownScenarios = null,
   knownSortData = null,
-  knownVisibilityMask = null
+  knownVisibilityMask = null,
+  perfTrace = null
 ) {
   if (!['scoreDesc', 'scoreAsc', 'dots'].includes(sortType)) {
     throw new Error('Неизвестный тип сортировки: ' + sortType);
@@ -249,6 +250,7 @@ function sortScenarioBlocksDetailed_(
     }
   }
 
+  const visibilityValidationStarted = perfTrace ? Date.now() : 0;
   const visibilityValidation = validateSortVisibilityContext_(
     knownVisibilityMask,
     sheet,
@@ -256,6 +258,11 @@ function sortScenarioBlocksDetailed_(
     CONFIG.firstRow,
     lastScenarioRow
   );
+  if (perfTrace) triggerPerfStep_(perfTrace, 'Validate Resolver context', visibilityValidationStarted, {
+    ok: visibilityValidation.ok,
+    reason: visibilityValidation.reason || null,
+    rows: rowCount
+  });
 
   if (!visibilityValidation.ok) {
     return {
@@ -272,7 +279,8 @@ function sortScenarioBlocksDetailed_(
       CONFIG.firstRow,
       lastScenarioRow,
       knownVisibilityMask,
-      sortType
+      sortType,
+      perfTrace
     );
 
     if (!plan.changed) {
@@ -329,7 +337,8 @@ function sortScenarioBlocks(
   knownLastRow = null,
   knownScenarios = null,
   knownSortData = null,
-  knownVisibilityMask = null
+  knownVisibilityMask = null,
+  perfTrace = null
 ) {
   const result = sortScenarioBlocksDetailed_(
     sheet,
@@ -337,7 +346,8 @@ function sortScenarioBlocks(
     knownLastRow,
     knownScenarios,
     knownSortData,
-    knownVisibilityMask
+    knownVisibilityMask,
+    perfTrace
   );
 
   if (result.status === 'NO_OP') return false;

@@ -111,28 +111,43 @@ function applyFilters(
       const sortLastRow = getLastScenarioRowFromData(inputData.data);
 
       if (sortLastRow >= CONFIG.firstRow) {
+        stepStarted = Date.now();
         const sortRowCount = sortLastRow - CONFIG.firstRow + 1;
         const sortData = inputData.data
           .slice(0, sortRowCount)
           .map(row => row.slice(0, CONFIG.sortWidth));
+        filterPerfStep_(perfTrace, 'Prepare auto-sort data', stepStarted, {
+          rows: sortRowCount,
+          columns: CONFIG.sortWidth
+        });
 
         stepStarted = Date.now();
-
         // Resolve the physical visibility before resetVisibility/showRows.
         sortVisibilityContext = readSortVisibilityContext_(
           sheet,
           sortLastRow,
-          sortData
+          sortData,
+          perfTrace
         );
+        filterPerfStep_(perfTrace, 'Resolve auto-sort visibility', stepStarted, {
+          ok: sortVisibilityContext.ok,
+          reason: sortVisibilityContext.reason || null
+        });
 
+        stepStarted = Date.now();
         const sortResult = sortScenarioBlocksDetailed_(
           sheet,
           'scoreDesc',
           sortLastRow,
           null,
           sortData,
-          sortVisibilityContext
+          sortVisibilityContext,
+          perfTrace
         );
+        filterPerfStep_(perfTrace, 'Build auto-sort plan', stepStarted, {
+          status: sortResult.status,
+          blocks: sortResult.plan ? sortResult.plan.blocks.length : 0
+        });
 
         sortChanged = sortResult.applied === true;
 

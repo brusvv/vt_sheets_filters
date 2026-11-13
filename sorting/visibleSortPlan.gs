@@ -88,7 +88,7 @@ function compareVisibleSortRecords_(left, right, sortType) {
  * Hidden physical positions may define scenario boundaries but cannot be
  * sources or destinations.
  */
-function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType) {
+function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType, perfTrace = null) {
   if (!['scoreDesc', 'scoreAsc', 'dots'].includes(sortType)) {
     throw new Error('UNKNOWN_SORT_TYPE: ' + sortType);
   }
@@ -99,16 +99,25 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType) 
     throw new Error('SORT_DATA_WIDTH_INVALID');
   }
 
+  const collectDiagnostics = Boolean(perfTrace && perfTrace.mode === 'DEBUG');
+  const maskValidationStarted = collectDiagnostics ? Date.now() : 0;
   validateVisibleSortMask_(mask, firstRow, lastRow);
+  if (collectDiagnostics) {
+    triggerPerfStep_(perfTrace, 'Sort planner: Validate input and visibility mask', maskValidationStarted, {
+      rows: data.length
+    });
+  }
 
   const visibleMask = mask.visibleByPhysicalPosition;
   const blocks = [];
   let blockStart = -1;
   let currentScenario = '';
+  let scenarioBlocksCount = 0;
 
   function flushBlock(endIndex) {
     if (blockStart < 0) return;
 
+    const visibleStarted = collectDiagnostics ? Date.now() : 0;
     const visibleRows = [];
 
     for (let index = blockStart; index <= endIndex; index++) {
@@ -117,9 +126,19 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType) 
       }
     }
 
+    if (collectDiagnostics) {
+      triggerPerfStep_(perfTrace, 'Sort planner: Collect visible rows', visibleStarted, {
+        scenario: currentScenario,
+        visibleRows: visibleRows.length
+      });
+    }
+
+    scenarioBlocksCount++;
+
     // A singleton (or fully hidden) block is a no-op; its sort keys do not
     // need validation because no record can move.
     if (visibleRows.length >= 2) {
+      const orderStarted = collectDiagnostics ? Date.now() : 0;
       const records = visibleRows.map(physicalRow => {
         const index = physicalRow - firstRow;
         return makeVisibleSortRecord_(
@@ -136,7 +155,16 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType) 
       const sourceRows = sortedRecords.map(record => record.sourceRow);
       const changed = sourceRows.some((row, index) => row !== visibleRows[index]);
 
+      if (collectDiagnostics) {
+        triggerPerfStep_(perfTrace, 'Sort planner: Compute row order', orderStarted, {
+          scenario: currentScenario,
+          visibleRows: visibleRows.length,
+          changed: changed
+        });
+      }
+
       if (changed) {
+        const resultStarted = collectDiagnostics ? Date.now() : 0;
         blocks.push({
           scenario: currentScenario,
           startRow: firstRow + blockStart,
@@ -148,6 +176,12 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType) 
             destinationRow: destinationRow
           }))
         });
+        if (collectDiagnostics) {
+          triggerPerfStep_(perfTrace, 'Sort planner: Build changed block', resultStarted, {
+            scenario: currentScenario,
+            visibleRows: visibleRows.length
+          });
+        }
       }
     }
 
@@ -155,6 +189,7 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType) 
     currentScenario = '';
   }
 
+  const boundariesStarted = collectDiagnostics ? Date.now() : 0;
   for (let index = 0; index < data.length; index++) {
     const scenario = String(data[index][0] || '').trim();
 
@@ -175,6 +210,14 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType) 
 
   flushBlock(data.length - 1);
 
+  if (collectDiagnostics) {
+    triggerPerfStep_(perfTrace, 'Sort planner: Build scenario blocks', boundariesStarted, {
+      rows: data.length,
+      scenarioBlocks: scenarioBlocksCount,
+      changedBlocks: blocks.length
+    });
+  }
+
   const plan = {
     firstRow: firstRow,
     lastRow: lastRow,
@@ -183,7 +226,14 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType) 
     changed: blocks.length > 0
   };
 
+  const validationStarted = collectDiagnostics ? Date.now() : 0;
   assertVisibleSortPlan_(plan, mask);
+  if (collectDiagnostics) {
+    triggerPerfStep_(perfTrace, 'Sort planner: Validate plan', validationStarted, {
+      blocks: plan.blocks.length,
+      changed: plan.changed
+    });
+  }
   return plan;
 }
 

@@ -73,11 +73,21 @@ function resetFilters() {
         trace
       );
 
+      operationPerfStep_(
+        trace,
+        'Apply filters',
+        stepStarted,
+        {
+          sheet: sheet.getName()
+        }
+      );
+
+      stepStarted = Date.now();
       SpreadsheetApp.flush();
 
       operationPerfStep_(
         trace,
-        'Apply filters and flush',
+        'Spreadsheet flush',
         stepStarted,
         {
           sheet: sheet.getName()

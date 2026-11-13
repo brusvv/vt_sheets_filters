@@ -32,7 +32,7 @@ function buildSortVisibilityStateFingerprint_(context) {
   });
 }
 
-function buildSortVisibilityContextFromSnapshots_(args) {
+function buildSortVisibilityContextFromSnapshots_(args, perfTrace = null) {
   const data = args.data;
   const firstRow = args.firstRow;
   const lastRow = args.lastRow;
@@ -41,6 +41,7 @@ function buildSortVisibilityContextFromSnapshots_(args) {
   const physicalHiddenByUser = args.physicalHiddenByUser;
   const physicalHiddenByFilter = args.physicalHiddenByFilter;
 
+  const validationStarted = perfTrace ? Date.now() : 0;
   if (!Number.isInteger(firstRow) || !Number.isInteger(lastRow) || lastRow < firstRow) {
     return { ok: false, reason: 'INVALID_ROW_BOUNDARY' };
   }
@@ -69,6 +70,14 @@ function buildSortVisibilityContextFromSnapshots_(args) {
     return { ok: false, reason: 'EXTERNAL_FILTER_UNSUPPORTED' };
   }
 
+  if (perfTrace) {
+    triggerPerfStep_(perfTrace, 'Resolver: Validate snapshots', validationStarted, {
+      rows: expectedLength,
+      valid: true
+    });
+  }
+
+  const contextBuildStarted = perfTrace ? Date.now() : 0;
   const manualKeyCounts = new Map();
   manualKeys.forEach(key => {
     manualKeyCounts.set(key, (manualKeyCounts.get(key) || 0) + 1);
@@ -142,9 +151,23 @@ function buildSortVisibilityContextFromSnapshots_(args) {
       !manualHiddenRows.has(firstRow + index)
   );
 
+  if (perfTrace) {
+    triggerPerfStep_(perfTrace, 'Resolver: Build context', contextBuildStarted, {
+      rows: expectedLength,
+      manualKeys: manualKeys.length,
+      manualHiddenRows: manualHiddenRows.size
+    });
+  }
+
+  const dataFingerprintStarted = perfTrace ? Date.now() : 0;
   const dataFingerprint = JSON.stringify(
     data.map(row => row.map(normalizeSortSnapshotValue_))
   );
+  if (perfTrace) {
+    triggerPerfStep_(perfTrace, 'Resolver: Data fingerprint', dataFingerprintStarted, {
+      rows: expectedLength
+    });
+  }
 
   const context = {
     ok: true,
@@ -164,8 +187,15 @@ function buildSortVisibilityContextFromSnapshots_(args) {
     source: 'validated-filterstate-manualstate-physical'
   };
 
+  const stateFingerprintStarted = perfTrace ? Date.now() : 0;
   context.stateFingerprint = buildSortVisibilityStateFingerprint_(context);
   context.fingerprint = context.stateFingerprint;
+  if (perfTrace) {
+    triggerPerfStep_(perfTrace, 'Resolver: State fingerprint', stateFingerprintStarted, {
+      rows: expectedLength,
+      manualKeys: manualKeys.length
+    });
+  }
 
   return context;
 }
@@ -184,12 +214,13 @@ function sortManualCountsEqual_(left, right) {
 /**
  * Reads current state without ensuring, creating, or migrating its layout.
  */
-function readSortVisibilityContext_(sheet, lastRow, knownSortData) {
+function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = null) {
   try {
     if (!sheet || !Number.isInteger(lastRow) || lastRow < CONFIG.firstRow) {
       return { ok: false, reason: 'INVALID_SORT_SHEET_OR_BOUNDARY' };
     }
 
+    const snapshotStarted = perfTrace ? Date.now() : 0;
     const upperRowCount = lastRow - CONFIG.firstRow + 1;
     let data;
 
@@ -215,6 +246,12 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData) {
 
     const exactCount = exactLastRow - CONFIG.firstRow + 1;
     data = data.slice(0, exactCount);
+    if (perfTrace) {
+      triggerPerfStep_(perfTrace, 'Resolver: Prepare C:L snapshot', snapshotStarted, {
+        rows: exactCount,
+        readFromKnownSortData: Array.isArray(knownSortData)
+      });
+    }
 
     const stateSheet = sheet.getParent().getSheetByName('_FilterState');
     if (!stateSheet) {
@@ -224,12 +261,17 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData) {
     const filterColumns = getFilterStateColumns(sheet);
     const manualColumns = getManualStateColumns(sheet);
 
+    const filterMetadataStarted = perfTrace ? Date.now() : 0;
     const filterMetadata = stateSheet.getRange(
       1,
       filterColumns.visibleCol,
       2,
       2
     ).getValues();
+    if (perfTrace) triggerPerfStep_(perfTrace, 'Resolver: Read FilterState metadata', filterMetadataStarted, {
+      rows: 2,
+      columns: 2
+    });
 
     if (
       filterMetadata[0][0] !== sheet.getName() + ' Visible' ||
@@ -243,19 +285,28 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData) {
       return { ok: false, reason: 'FILTERSTATE_TOO_SHORT' };
     }
 
+    const filterVisibilityStarted = perfTrace ? Date.now() : 0;
     const filterVisibility = stateSheet.getRange(
       CONFIG.firstRow,
       filterColumns.visibleCol,
       exactCount,
       1
     ).getValues().map(row => row[0]);
+    if (perfTrace) triggerPerfStep_(perfTrace, 'Resolver: Read FilterState visibility', filterVisibilityStarted, {
+      rows: exactCount
+    });
 
+    const manualMetadataStarted = perfTrace ? Date.now() : 0;
     const manualMetadata = stateSheet.getRange(
       1,
       manualColumns.keyCol,
       2,
       2
     ).getValues();
+    if (perfTrace) triggerPerfStep_(perfTrace, 'Resolver: Read ManualState metadata', manualMetadataStarted, {
+      rows: 2,
+      columns: 2
+    });
 
     if (
       manualMetadata[0][0] !== sheet.getName() + ' Manual' ||
@@ -269,6 +320,7 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData) {
       return { ok: false, reason: 'MANUALSTATE_COUNT_INVALID' };
     }
 
+    const manualKeysStarted = perfTrace ? Date.now() : 0;
     const manualKeys = manualCount > 0
       ? stateSheet.getRange(
           CONFIG.firstRow,
@@ -277,7 +329,11 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData) {
           1
         ).getValues().map(row => row[0])
       : [];
+    if (perfTrace) triggerPerfStep_(perfTrace, 'Resolver: Read ManualState keys', manualKeysStarted, {
+      keys: manualCount
+    });
 
+    const physicalVisibilityStarted = perfTrace ? Date.now() : 0;
     const physicalHiddenByUser = [];
     const physicalHiddenByFilter = [];
 
@@ -285,6 +341,15 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData) {
       const row = CONFIG.firstRow + offset;
       physicalHiddenByUser.push(sheet.isRowHiddenByUser(row));
       physicalHiddenByFilter.push(sheet.isRowHiddenByFilter(row));
+    }
+
+    if (perfTrace) {
+      triggerPerfStep_(perfTrace, 'Resolver: Read physical visibility', physicalVisibilityStarted, {
+        rowsChecked: exactCount,
+        isRowHiddenByUserCalls: exactCount,
+        isRowHiddenByFilterCalls: exactCount,
+        spreadsheetApiCalls: exactCount * 2
+      });
     }
 
     const context = buildSortVisibilityContextFromSnapshots_({
@@ -295,7 +360,7 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData) {
       manualKeys: manualKeys,
       physicalHiddenByUser: physicalHiddenByUser,
       physicalHiddenByFilter: physicalHiddenByFilter
-    });
+    }, perfTrace);
 
     if (!context.ok) return context;
 
@@ -304,8 +369,13 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData) {
     context.filterMetadata = filterMetadata.map(row => row.slice());
     context.manualMetadata = manualMetadata.map(row => row.slice());
     context.savedLastRow = savedLastRow;
+    const finalStateFingerprintStarted = perfTrace ? Date.now() : 0;
     context.stateFingerprint = buildSortVisibilityStateFingerprint_(context);
     context.fingerprint = context.stateFingerprint;
+    if (perfTrace) triggerPerfStep_(perfTrace, 'Resolver: Final state fingerprint', finalStateFingerprintStarted, {
+      rows: exactCount,
+      manualKeys: manualKeys.length
+    });
     return context;
 
   } catch (error) {

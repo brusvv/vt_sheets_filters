@@ -26,11 +26,25 @@
  * Если parentTrace отсутствует:
  * создаёт собственную трассировку.
  */
+function lockPerfSafe_(diagnosticCall) {
+  try {
+    diagnosticCall();
+  } catch (error) {
+    // Lock lifecycle must not depend on diagnostic code.
+  }
+}
+
 function withProjectLock(callback, parentTrace = null) {
   const ownsTrace = !parentTrace;
 
-  const trace = parentTrace ||
-    triggerPerfStart_('withProjectLock');
+  let trace = parentTrace;
+  if (!trace) {
+    try {
+      trace = triggerPerfStart_('withProjectLock');
+    } catch (error) {
+      trace = null;
+    }
+  }
 
   const lock = LockService.getScriptLock();
 
@@ -69,36 +83,42 @@ function withProjectLock(callback, parentTrace = null) {
 
     // Событие успешного получения блокировки.
     if (lockAcquired) {
-      triggerPerfEvent_(
-        trace,
-        'LOCK_ACQUIRED',
-        {
-          waitMs: waitDuration
-        }
-      );
+      lockPerfSafe_(function() {
+        triggerPerfEvent_(
+          trace,
+          'LOCK_ACQUIRED',
+          {
+            waitMs: waitDuration
+          }
+        );
+      });
     } else {
-      triggerPerfEvent_(
-        trace,
-        'LOCK_WAIT_FAILED',
-        {
-          waitMs: waitDuration,
-          message: operationError
-            ? operationError.message
-            : 'Unknown lock error'
-        }
-      );
+      lockPerfSafe_(function() {
+        triggerPerfEvent_(
+          trace,
+          'LOCK_WAIT_FAILED',
+          {
+            waitMs: waitDuration,
+            message: operationError
+              ? operationError.message
+              : 'Unknown lock error'
+          }
+        );
+      });
     }
 
     // Этап ожидания фиксируется даже при ошибке.
-    triggerPerfStep_(
-      trace,
-      'Lock wait',
-      waitStarted,
-      {
-        status: lockAcquired ? 'ACQUIRED' : 'FAILED',
-        waitMs: waitDuration
-      }
-    );
+    lockPerfSafe_(function() {
+      triggerPerfStep_(
+        trace,
+        'Lock wait',
+        waitStarted,
+        {
+          status: lockAcquired ? 'ACQUIRED' : 'FAILED',
+          waitMs: waitDuration
+        }
+      );
+    });
   }
 
 
@@ -125,15 +145,17 @@ function withProjectLock(callback, parentTrace = null) {
       const executionDuration =
         Date.now() - executionStarted;
 
-      triggerPerfStep_(
-        trace,
-        'Locked callback execution',
-        executionStarted,
-        {
-          status: status,
-          durationMs: executionDuration
-        }
-      );
+      lockPerfSafe_(function() {
+        triggerPerfStep_(
+          trace,
+          'Locked callback execution',
+          executionStarted,
+          {
+            status: status,
+            durationMs: executionDuration
+          }
+        );
+      });
     }
   }
 
@@ -168,14 +190,16 @@ function withProjectLock(callback, parentTrace = null) {
       }
 
     } finally {
-      triggerPerfStep_(
-        trace,
-        'Lock release',
-        releaseStarted,
-        {
-          status: status
-        }
-      );
+      lockPerfSafe_(function() {
+        triggerPerfStep_(
+          trace,
+          'Lock release',
+          releaseStarted,
+          {
+            status: status
+          }
+        );
+      });
     }
   }
 
@@ -187,11 +211,13 @@ function withProjectLock(callback, parentTrace = null) {
    * ответственностью родительской функции.
    */
   if (ownsTrace) {
-    triggerPerfEnd_(
-      trace,
-      status,
-      errorMetadata
-    );
+    lockPerfSafe_(function() {
+      triggerPerfEnd_(
+        trace,
+        status,
+        errorMetadata
+      );
+    });
   }
 
 

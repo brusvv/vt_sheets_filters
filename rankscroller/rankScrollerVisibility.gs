@@ -13,7 +13,7 @@
  *
  * Файл не выполняет расчёты Energy.
  * Не обращается к Script Properties.
- * Не использует Performance Tracer.
+ * Получает необязательную трассировку только для измерения операций.
  */
 
 
@@ -38,7 +38,8 @@ function showRankScrollerColumns_(
   startColumn,
   totalColumns,
   currentColumn,
-  visibleColumns
+  visibleColumns,
+  perfTrace = null
 ) {
   if (
     !isRankScrollerSheetAllowed_(sheet) ||
@@ -58,15 +59,31 @@ function showRankScrollerColumns_(
     };
   }
 
+  let stepStarted = perfTrace ? Date.now() : 0;
   sheet.hideColumns(
     startColumn,
     totalColumns
   );
+  if (perfTrace) {
+    triggerPerfStep_(perfTrace, 'Rank Scroller: hideColumns', stepStarted, {
+      sheet: sheet.getName(),
+      calls: 1,
+      columns: totalColumns
+    });
+  }
 
+  stepStarted = perfTrace ? Date.now() : 0;
   sheet.showColumns(
     currentColumn,
     visibleColumns
   );
+  if (perfTrace) {
+    triggerPerfStep_(perfTrace, 'Rank Scroller: showColumns', stepStarted, {
+      sheet: sheet.getName(),
+      calls: 1,
+      columns: visibleColumns
+    });
+  }
 
   return {
     success: true,
@@ -98,7 +115,8 @@ function showRankScrollerTierColumns_(
   sheet,
   startColumn,
   totalColumns,
-  energyValues
+  energyValues,
+  perfTrace = null
 ) {
   if (
     !isRankScrollerSheetAllowed_(sheet) ||
@@ -116,10 +134,18 @@ function showRankScrollerTierColumns_(
   }
 
   // Сначала скрываем весь диапазон.
+  const hideStarted = perfTrace ? Date.now() : 0;
   sheet.hideColumns(
     startColumn,
     totalColumns
   );
+  if (perfTrace) {
+    triggerPerfStep_(perfTrace, 'Rank Scroller: hideColumns', hideStarted, {
+      sheet: sheet.getName(),
+      calls: 1,
+      columns: totalColumns
+    });
+  }
 
   const visibleGroups = [];
 
@@ -163,12 +189,20 @@ function showRankScrollerTierColumns_(
   }
 
   // Показываем найденные группы.
+  const showStarted = perfTrace ? Date.now() : 0;
   visibleGroups.forEach(function(group) {
     sheet.showColumns(
       group.start,
       group.length
     );
   });
+  if (perfTrace) {
+    triggerPerfStep_(perfTrace, 'Rank Scroller: showColumns groups', showStarted, {
+      sheet: sheet.getName(),
+      calls: visibleGroups.length,
+      groups: visibleGroups.length,
+    });
+  }
 
   return {
     success: true,

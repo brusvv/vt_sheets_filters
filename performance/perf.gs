@@ -717,11 +717,16 @@ function triggerPerfStart_(
     return null;
   }
 
-  return perfStart_(
-    operation,
-    metadata,
-    parentTrace
-  );
+  try {
+    return perfStart_(
+      operation,
+      metadata,
+      parentTrace
+    );
+  } catch (error) {
+    // Tracing is best-effort and must not interrupt business operations.
+    return null;
+  }
 }
 
 
@@ -740,11 +745,15 @@ function triggerPerfEvent_(
     return;
   }
 
-  perfEvent_(
-    trace,
-    name,
-    metadata
-  );
+  try {
+    perfEvent_(
+      trace,
+      name,
+      metadata
+    );
+  } catch (error) {
+    // Diagnostic failures must never escape into business code.
+  }
 }
 
 
@@ -764,12 +773,16 @@ function triggerPerfStep_(
     return;
   }
 
-  perfStep_(
-    trace,
-    name,
-    startedAt,
-    metadata
-  );
+  try {
+    perfStep_(
+      trace,
+      name,
+      startedAt,
+      metadata
+    );
+  } catch (error) {
+    // Diagnostic failures must never escape into business code.
+  }
 }
 
 
@@ -788,10 +801,14 @@ function triggerPerfEnd_(
     return;
   }
 
-  perfEnd_(
-    trace,
-    status,
-    metadata
-  );
+  try {
+    perfEnd_(
+      trace,
+      status,
+      metadata
+    );
+  } catch (error) {
+    // Diagnostic failures must never escape into business code.
+  }
 }
 

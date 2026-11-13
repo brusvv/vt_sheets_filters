@@ -195,14 +195,24 @@ function runManualSortOperation_(
 
   try {
     const result = withProjectLock(function() {
+      let stepStarted = Date.now();
       const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
       const sheet = getTargetSheet(null, spreadsheet);
+
+      operationPerfStep_(
+        trace,
+        'Get sheet',
+        stepStarted,
+        { sheet: sheet.getName() }
+      );
+
+      const lastRowStarted = Date.now();
       const sheetLastRow = sheet.getLastRow();
 
       operationPerfStep_(
         trace,
         'Get last row',
-        Date.now(),
+        lastRowStarted,
         { sheet: sheet.getName(), lastRow: sheetLastRow }
       );
 
@@ -212,14 +222,25 @@ function runManualSortOperation_(
       }
 
       const upperRowCount = sheetLastRow - CONFIG.firstRow + 1;
+      stepStarted = Date.now();
       const allData = sheet.getRange(
         CONFIG.firstRow,
         CONFIG.sortStartCol,
         upperRowCount,
         CONFIG.sortWidth
       ).getValues();
+      operationPerfStep_(trace, 'Read C:L', stepStarted, {
+        sheet: sheet.getName(),
+        rows: upperRowCount,
+        columns: CONFIG.sortWidth
+      });
 
+      stepStarted = Date.now();
       const lastScenarioRow = getLastScenarioRowFromData(allData);
+      operationPerfStep_(trace, 'Find last scenario row', stepStarted, {
+        sheet: sheet.getName(),
+        lastRow: lastScenarioRow
+      });
       if (lastScenarioRow < CONFIG.firstRow) {
         spreadsheet.toast('No data to sort', 'Sorting', 3);
         return {
@@ -229,25 +250,46 @@ function runManualSortOperation_(
         };
       }
 
+      stepStarted = Date.now();
       const rowCount = lastScenarioRow - CONFIG.firstRow + 1;
       const sortData = allData
         .slice(0, rowCount)
         .map(row => row.slice(0, CONFIG.sortWidth));
+      operationPerfStep_(trace, 'Prepare sort data', stepStarted, {
+        sheet: sheet.getName(),
+        rows: rowCount,
+        columns: CONFIG.sortWidth
+      });
 
+      stepStarted = Date.now();
       const visibilityContext = readSortVisibilityContext_(
         sheet,
         lastScenarioRow,
-        sortData
+        sortData,
+        trace
       );
+      operationPerfStep_(trace, 'Resolve visibility', stepStarted, {
+        sheet: sheet.getName(),
+        ok: visibilityContext.ok,
+        reason: visibilityContext.reason || null
+      });
 
+      stepStarted = Date.now();
       const sortResult = sortScenarioBlocksDetailed_(
         sheet,
         sortType,
         lastScenarioRow,
         null,
         sortData,
-        visibilityContext
+        visibilityContext,
+        trace
       );
+      operationPerfStep_(trace, 'Build sort plan', stepStarted, {
+        sheet: sheet.getName(),
+        status: sortResult.status,
+        blocks: sortResult.plan ? sortResult.plan.blocks.length : 0,
+        applied: sortResult.applied === true
+      });
 
       triggerPerfEvent_(trace, 'MANUAL_SORT_PLAN', {
         sheet: sheet.getName(),

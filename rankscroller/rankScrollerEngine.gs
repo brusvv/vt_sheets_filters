@@ -421,7 +421,8 @@ function updateRankScrollerVisibility_(
         sheet,
         startColumn,
         totalColumns,
-        energyValues
+        energyValues,
+        trace
       );
 
     if (!visibilityResult.success) {
@@ -534,7 +535,8 @@ function updateRankScrollerVisibility_(
       startColumn,
       totalColumns,
       currentColumn,
-      visibleColumns
+      visibleColumns,
+      trace
     );
 
   if (!visibilityResult.success) {
