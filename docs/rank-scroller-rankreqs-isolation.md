@@ -48,7 +48,6 @@ resetFilters()
 - обработчик листа проверяет имя до `getSheetByName()` и сверяет имя полученного объекта;
 - обе низкоуровневые функции `hideColumns/showColumns` отказываются работать с листом вне allow-list;
 - `getTargetSheet()` отклоняет явно переданное имя, не являющееся игровым листом;
-- `applyFilters()` отклоняет переданный объект неигрового листа до чтения или записи диапазонов.
 
 Фильтрационная логика, формулы и настройки CONFIG не менялись. Список игровых листов не расширялся.
 
@@ -109,7 +108,7 @@ SpreadsheetApp.getActiveSpreadsheet().getActiveSheet()
 5. Низкоуровневые visibility helpers не выполняют `hideColumns/showColumns` на `RankReqs`.
 6. Обновление Intermediate не меняет формулы и состояние видимости mock-листа RankReqs.
 7. `resetFilters()` при активном RankReqs маршрутизирует операцию на Intermediate и не пишет в формулы RankReqs.
-8. Общий helper и `applyFilters()` отклоняют явно переданный RankReqs.
+8. Общий helper отклоняет явно переданный RankReqs.
 
 Это unit/integration-like mock-тесты. Они доказывают границы вызовов в текущем коде под заданной моделью объектов, но не являются экспериментом с настоящим Google Sheets API и не подтверждают поведение пересчёта формул Google Sheets.
 

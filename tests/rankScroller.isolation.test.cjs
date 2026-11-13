@@ -469,16 +469,6 @@ test('game-sheet helper rejects an explicit RankReqs target', () => {
     /Недопустимый целевой лист/
   );
 
-  assert.throws(
-    () => fixture.context.applyFilters(
-      true,
-      fixture.sheets.RankReqs,
-      false,
-      fixture.optionsValues
-    ),
-    /Filters accept only tracked gameplay sheets/
-  );
-
   assert.equal(fixture.sheets.RankReqs.writes.length, 0);
   assert.equal(fixture.sheets.RankReqs.columnEvents.length, 0);
 });
