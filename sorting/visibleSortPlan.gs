@@ -110,22 +110,26 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType) 
     if (blockStart < 0) return;
 
     const visibleRows = [];
-    const records = [];
 
     for (let index = blockStart; index <= endIndex; index++) {
-      if (!visibleMask[index]) continue;
-
-      const physicalRow = firstRow + index;
-      visibleRows.push(physicalRow);
-      records.push(makeVisibleSortRecord_(
-        data[index],
-        physicalRow,
-        index,
-        sortType
-      ));
+      if (visibleMask[index]) {
+        visibleRows.push(firstRow + index);
+      }
     }
 
+    // A singleton (or fully hidden) block is a no-op; its sort keys do not
+    // need validation because no record can move.
     if (visibleRows.length >= 2) {
+      const records = visibleRows.map(physicalRow => {
+        const index = physicalRow - firstRow;
+        return makeVisibleSortRecord_(
+          data[index],
+          physicalRow,
+          index,
+          sortType
+        );
+      });
+
       const sortedRecords = records.slice().sort(
         (left, right) => compareVisibleSortRecords_(left, right, sortType)
       );

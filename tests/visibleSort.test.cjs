@@ -38,6 +38,47 @@ function loadProject() {
 
 const project = loadProject();
 
+
+test('all changed Apps Script files parse successfully', () => {
+  const changedGsFiles = [
+    'filtering/filterEngine.gs',
+    'filtering/filters.gs',
+    'sorting/sortOperations.gs',
+    'sorting/sorting.gs',
+    'sorting/sortVisibility.gs',
+    'sorting/visibleSortPlan.gs'
+  ];
+
+  changedGsFiles.forEach(file => {
+    const source = fs.readFileSync(path.join(root, file), 'utf8');
+    assert.doesNotThrow(
+      () => new vm.Script(source, { filename: file }),
+      file + ' must be valid JavaScript'
+    );
+  });
+});
+
+test('AutoSort and ManualSort resolve visibility before invoking the planner', () => {
+  const filtersSource = fs.readFileSync(
+    path.join(root, 'filtering/filters.gs'),
+    'utf8'
+  );
+  const manualSource = fs.readFileSync(
+    path.join(root, 'sorting/sortOperations.gs'),
+    'utf8'
+  );
+  const manualStart = manualSource.indexOf('function runManualSortOperation_');
+  const activeManualOperation = manualSource.slice(manualStart);
+
+  assert.ok(filtersSource.includes('readSortVisibilityContext_('));
+  assert.ok(activeManualOperation.includes('readSortVisibilityContext_('));
+  assert.ok(activeManualOperation.includes('sortScenarioBlocksDetailed_('));
+  assert.equal(activeManualOperation.includes('restoreSortedRowVisibility_('), false);
+  assert.equal(activeManualOperation.includes('updateVisibleRowsState('), false);
+});
+
+
+
 function row(scenario, score, dots, identity) {
   const values = Array(10).fill('');
   values[0] = scenario;
@@ -432,6 +473,41 @@ test('changed permutation is planned but no source, destination, or state write 
     error => error && error.code === 'FULL_CELL_STAGING_ROUND_TRIP_NOT_VERIFIED'
   );
   assert.equal(writes, 0);
+});
+
+test('a singleton visible row is a no-op even when its sort keys are empty', () => {
+  const data = [
+    row('A', '', '', 'hidden'),
+    row('A', 'invalid', '', 'visible')
+  ];
+  const plan = buildPlan(data, [false, true]);
+
+  assert.equal(plan.changed, false);
+  assert.equal(plan.blocks.length, 0);
+});
+
+test('FilterState-hidden physical rows are never sort sources or destinations', () => {
+  const data = [
+    row('A', 10, 'B', 'visible-r3'),
+    row('A', 999, 'Z', 'filter-hidden-r4'),
+    row('A', 30, 'C', 'visible-r5')
+  ];
+  const context = resolve(data, {
+    filterVisibility: [true, false, true],
+    physicalHiddenByUser: [false, true, false]
+  });
+
+  assert.equal(context.ok, true);
+  assert.deepEqual(Array.from(context.visibleByPhysicalPosition), [true, false, true]);
+
+  const plan = project.buildVisibleScenarioSortPlan_(
+    data, 3, 5, context, 'scoreDesc'
+  );
+
+  assert.deepEqual(Array.from(plan.blocks[0].sourceRows), [5, 3]);
+  assert.deepEqual(Array.from(plan.blocks[0].visibleRows), [3, 5]);
+  assert.equal(plan.blocks[0].sourceRows.includes(4), false);
+  assert.equal(plan.blocks[0].visibleRows.includes(4), false);
 });
 
 test('already sorted visible slots produce a no-op', () => {
