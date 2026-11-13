@@ -40,7 +40,7 @@ Resolver дополнительно хранит исходные ManualState ke
 - конфликт ManualState: фильтрационная часть останавливается без изменения содержимого, FilterState, ManualState и физической видимости;
 - ManualSort entry point: план строится, toast возвращается, но нет записи/показа/скрытия;
 - AutoSort OFF: Resolver и Planner не вызываются;
-- fresh-проверка обнаруживает изменения данных, состояния, видимости, границы и target sheet.
+- fresh-проверка отдельно обнаруживает изменение C, других данных C:L, FilterState, ManualState, физической видимости, границы и target sheet.
 
 Эти тесты не являются тестами реального Google Sheets API.
 

@@ -862,3 +862,42 @@ test('ManualSort integration: actual entry point resolves and plans, but never m
   assert.equal(fixture.stateWrites.length, 0);
   assert.equal(fixture.rangeSortCalls(), 0);
 });
+
+
+test('fresh validator detects a change specifically in scenario column C', () => {
+  const fixture = createMockWorkbook();
+  const context = fixture.project.readSortVisibilityContext_(
+    fixture.gameSheet,
+    fixture.lastRow,
+    readGameRows(fixture)
+  );
+
+  fixture.gameSheet.grid[2][2] = 'B';
+
+  const result = fixture.project.validateSortVisibilityContextFresh_(
+    fixture.gameSheet,
+    context
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'VISIBILITY_CONTEXT_DATA_STALE');
+});
+
+test('fresh validator detects a physical visibility change even when FilterState is unchanged', () => {
+  const fixture = createMockWorkbook();
+  const context = fixture.project.readSortVisibilityContext_(
+    fixture.gameSheet,
+    fixture.lastRow,
+    readGameRows(fixture)
+  );
+
+  fixture.gameSheet.showRows(4, 1);
+
+  const result = fixture.project.validateSortVisibilityContextFresh_(
+    fixture.gameSheet,
+    context
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'VISIBILITY_CONTEXT_FRESH_READ_FAILED');
+});
