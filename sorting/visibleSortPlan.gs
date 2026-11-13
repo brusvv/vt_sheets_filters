@@ -103,7 +103,7 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType, 
   const maskValidationStarted = collectDiagnostics ? Date.now() : 0;
   validateVisibleSortMask_(mask, firstRow, lastRow);
   if (collectDiagnostics) {
-    triggerPerfStep_(perfTrace, 'Sort planner: Validate input and visibility mask', maskValidationStarted, {
+    sortPerfStep_(perfTrace, 'Sort planner: Validate input and visibility mask', maskValidationStarted, {
       rows: data.length
     });
   }
@@ -127,7 +127,7 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType, 
     }
 
     if (collectDiagnostics) {
-      triggerPerfStep_(perfTrace, 'Sort planner: Collect visible rows', visibleStarted, {
+      sortPerfStep_(perfTrace, 'Sort planner: Collect visible rows', visibleStarted, {
         scenario: currentScenario,
         visibleRows: visibleRows.length
       });
@@ -156,7 +156,7 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType, 
       const changed = sourceRows.some((row, index) => row !== visibleRows[index]);
 
       if (collectDiagnostics) {
-        triggerPerfStep_(perfTrace, 'Sort planner: Compute row order', orderStarted, {
+        sortPerfStep_(perfTrace, 'Sort planner: Compute row order', orderStarted, {
           scenario: currentScenario,
           visibleRows: visibleRows.length,
           changed: changed
@@ -177,7 +177,7 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType, 
           }))
         });
         if (collectDiagnostics) {
-          triggerPerfStep_(perfTrace, 'Sort planner: Build changed block', resultStarted, {
+          sortPerfStep_(perfTrace, 'Sort planner: Build changed block', resultStarted, {
             scenario: currentScenario,
             visibleRows: visibleRows.length
           });
@@ -211,7 +211,7 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType, 
   flushBlock(data.length - 1);
 
   if (collectDiagnostics) {
-    triggerPerfStep_(perfTrace, 'Sort planner: Build scenario blocks', boundariesStarted, {
+    sortPerfStep_(perfTrace, 'Sort planner: Build scenario blocks', boundariesStarted, {
       rows: data.length,
       scenarioBlocks: scenarioBlocksCount,
       changedBlocks: blocks.length
@@ -229,7 +229,7 @@ function buildVisibleScenarioSortPlan_(data, firstRow, lastRow, mask, sortType, 
   const validationStarted = collectDiagnostics ? Date.now() : 0;
   assertVisibleSortPlan_(plan, mask);
   if (collectDiagnostics) {
-    triggerPerfStep_(perfTrace, 'Sort planner: Validate plan', validationStarted, {
+    sortPerfStep_(perfTrace, 'Sort planner: Validate plan', validationStarted, {
       blocks: plan.blocks.length,
       changed: plan.changed
     });

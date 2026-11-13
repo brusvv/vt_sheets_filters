@@ -1,4 +1,17 @@
 /**
+ * Optional tracer bridge for sorting diagnostics. Some isolated test/runtime
+ * contexts intentionally omit Performance Tracer; diagnostics stay optional.
+ */
+function sortPerfStep_(trace, name, startedAt, metadata = {}) {
+  if (!trace || typeof triggerPerfStep_ !== 'function') return;
+  try {
+    triggerPerfStep_(trace, name, startedAt, metadata);
+  } catch (error) {
+    // Sort/resolve behavior must never depend on diagnostic code.
+  }
+}
+
+/**
  * READ-ONLY VISIBILITY RESOLVER FOR PINNED SORTING.
  *
  * Never creates or migrates FilterState, writes fallback state, or mutates
@@ -71,7 +84,7 @@ function buildSortVisibilityContextFromSnapshots_(args, perfTrace = null) {
   }
 
   if (perfTrace) {
-    triggerPerfStep_(perfTrace, 'Resolver: Validate snapshots', validationStarted, {
+    sortPerfStep_(perfTrace, 'Resolver: Validate snapshots', validationStarted, {
       rows: expectedLength,
       valid: true
     });
@@ -152,7 +165,7 @@ function buildSortVisibilityContextFromSnapshots_(args, perfTrace = null) {
   );
 
   if (perfTrace) {
-    triggerPerfStep_(perfTrace, 'Resolver: Build context', contextBuildStarted, {
+    sortPerfStep_(perfTrace, 'Resolver: Build context', contextBuildStarted, {
       rows: expectedLength,
       manualKeys: manualKeys.length,
       manualHiddenRows: manualHiddenRows.size
@@ -164,7 +177,7 @@ function buildSortVisibilityContextFromSnapshots_(args, perfTrace = null) {
     data.map(row => row.map(normalizeSortSnapshotValue_))
   );
   if (perfTrace) {
-    triggerPerfStep_(perfTrace, 'Resolver: Data fingerprint', dataFingerprintStarted, {
+    sortPerfStep_(perfTrace, 'Resolver: Data fingerprint', dataFingerprintStarted, {
       rows: expectedLength
     });
   }
@@ -191,7 +204,7 @@ function buildSortVisibilityContextFromSnapshots_(args, perfTrace = null) {
   context.stateFingerprint = buildSortVisibilityStateFingerprint_(context);
   context.fingerprint = context.stateFingerprint;
   if (perfTrace) {
-    triggerPerfStep_(perfTrace, 'Resolver: State fingerprint', stateFingerprintStarted, {
+    sortPerfStep_(perfTrace, 'Resolver: State fingerprint', stateFingerprintStarted, {
       rows: expectedLength,
       manualKeys: manualKeys.length
     });
@@ -247,7 +260,7 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = n
     const exactCount = exactLastRow - CONFIG.firstRow + 1;
     data = data.slice(0, exactCount);
     if (perfTrace) {
-      triggerPerfStep_(perfTrace, 'Resolver: Prepare C:L snapshot', snapshotStarted, {
+      sortPerfStep_(perfTrace, 'Resolver: Prepare C:L snapshot', snapshotStarted, {
         rows: exactCount,
         readFromKnownSortData: Array.isArray(knownSortData)
       });
@@ -268,7 +281,7 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = n
       2,
       2
     ).getValues();
-    if (perfTrace) triggerPerfStep_(perfTrace, 'Resolver: Read FilterState metadata', filterMetadataStarted, {
+    if (perfTrace) sortPerfStep_(perfTrace, 'Resolver: Read FilterState metadata', filterMetadataStarted, {
       rows: 2,
       columns: 2
     });
@@ -292,7 +305,7 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = n
       exactCount,
       1
     ).getValues().map(row => row[0]);
-    if (perfTrace) triggerPerfStep_(perfTrace, 'Resolver: Read FilterState visibility', filterVisibilityStarted, {
+    if (perfTrace) sortPerfStep_(perfTrace, 'Resolver: Read FilterState visibility', filterVisibilityStarted, {
       rows: exactCount
     });
 
@@ -303,7 +316,7 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = n
       2,
       2
     ).getValues();
-    if (perfTrace) triggerPerfStep_(perfTrace, 'Resolver: Read ManualState metadata', manualMetadataStarted, {
+    if (perfTrace) sortPerfStep_(perfTrace, 'Resolver: Read ManualState metadata', manualMetadataStarted, {
       rows: 2,
       columns: 2
     });
@@ -329,7 +342,7 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = n
           1
         ).getValues().map(row => row[0])
       : [];
-    if (perfTrace) triggerPerfStep_(perfTrace, 'Resolver: Read ManualState keys', manualKeysStarted, {
+    if (perfTrace) sortPerfStep_(perfTrace, 'Resolver: Read ManualState keys', manualKeysStarted, {
       keys: manualCount
     });
 
@@ -344,7 +357,7 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = n
     }
 
     if (perfTrace) {
-      triggerPerfStep_(perfTrace, 'Resolver: Read physical visibility', physicalVisibilityStarted, {
+      sortPerfStep_(perfTrace, 'Resolver: Read physical visibility', physicalVisibilityStarted, {
         rowsChecked: exactCount,
         isRowHiddenByUserCalls: exactCount,
         isRowHiddenByFilterCalls: exactCount,
@@ -372,7 +385,7 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = n
     const finalStateFingerprintStarted = perfTrace ? Date.now() : 0;
     context.stateFingerprint = buildSortVisibilityStateFingerprint_(context);
     context.fingerprint = context.stateFingerprint;
-    if (perfTrace) triggerPerfStep_(perfTrace, 'Resolver: Final state fingerprint', finalStateFingerprintStarted, {
+    if (perfTrace) sortPerfStep_(perfTrace, 'Resolver: Final state fingerprint', finalStateFingerprintStarted, {
       rows: exactCount,
       manualKeys: manualKeys.length
     });

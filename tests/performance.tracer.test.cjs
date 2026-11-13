@@ -322,7 +322,7 @@ test('Rank Scroller measures hide/show calls without changing the allow-list or 
   assert.deepEqual(calls, [
     ['hideColumns', 14, 5],
     ['showColumns', 14, 2],
-    ['showColumns', 17, 3]
+    ['showColumns', 17, 2]
   ]);
   assert.equal(steps[0].name, 'Rank Scroller: hideColumns');
   assert.equal(steps[1].name, 'Rank Scroller: showColumns groups');

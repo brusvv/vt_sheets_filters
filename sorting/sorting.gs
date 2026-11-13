@@ -258,7 +258,7 @@ function sortScenarioBlocksDetailed_(
     CONFIG.firstRow,
     lastScenarioRow
   );
-  if (perfTrace) triggerPerfStep_(perfTrace, 'Validate Resolver context', visibilityValidationStarted, {
+  if (perfTrace) sortPerfStep_(perfTrace, 'Validate Resolver context', visibilityValidationStarted, {
     ok: visibilityValidation.ok,
     reason: visibilityValidation.reason || null,
     rows: rowCount
