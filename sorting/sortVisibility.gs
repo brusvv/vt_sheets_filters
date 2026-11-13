@@ -10,6 +10,28 @@ function normalizeSortSnapshotValue_(value) {
   return [typeof value, value];
 }
 
+/**
+ * Rebuilds the complete resolver fingerprint from its captured fields.
+ * This detects accidental mutation of the snapshot object itself.
+ * It does not replace a fresh read from Sheets when a commit is introduced.
+ */
+function buildSortVisibilityStateFingerprint_(context) {
+  return JSON.stringify({
+    firstRow: context.firstRow,
+    lastRow: context.lastRow,
+    dataFingerprint: context.dataFingerprint,
+    filterVisibility: context.filterVisibility,
+    manualKeys: context.manualKeys,
+    physicalHiddenByUser: context.physicalHiddenByUser,
+    physicalHiddenByFilter: context.physicalHiddenByFilter,
+    filterMetadata: context.filterMetadata || null,
+    manualMetadata: context.manualMetadata || null,
+    savedLastRow: context.savedLastRow === undefined
+      ? null
+      : context.savedLastRow
+  });
+}
+
 function buildSortVisibilityContextFromSnapshots_(args) {
   const data = args.data;
   const firstRow = args.firstRow;
@@ -124,17 +146,7 @@ function buildSortVisibilityContextFromSnapshots_(args) {
     data.map(row => row.map(normalizeSortSnapshotValue_))
   );
 
-  const stateFingerprint = JSON.stringify({
-    firstRow: firstRow,
-    lastRow: lastRow,
-    dataFingerprint: dataFingerprint,
-    filterVisibility: filterVisibility,
-    manualKeys: manualKeys.slice(),
-    physicalHiddenByUser: physicalHiddenByUser,
-    physicalHiddenByFilter: physicalHiddenByFilter
-  });
-
-  return {
+  const context = {
     ok: true,
     firstRow: firstRow,
     lastRow: lastRow,
@@ -142,13 +154,20 @@ function buildSortVisibilityContextFromSnapshots_(args) {
     filterVisibility: filterVisibility.slice(),
     manualHiddenRows: manualHiddenRows,
     manualKeyCounts: manualKeyCounts,
+    manualKeys: manualKeys.slice(),
     physicalHiddenByUser: physicalHiddenByUser.slice(),
     physicalHiddenByFilter: physicalHiddenByFilter.slice(),
     dataFingerprint: dataFingerprint,
-    stateFingerprint: stateFingerprint,
-    fingerprint: stateFingerprint,
+    filterMetadata: null,
+    manualMetadata: null,
+    savedLastRow: null,
     source: 'validated-filterstate-manualstate-physical'
   };
+
+  context.stateFingerprint = buildSortVisibilityStateFingerprint_(context);
+  context.fingerprint = context.stateFingerprint;
+
+  return context;
 }
 
 function sortManualCountsEqual_(left, right) {
@@ -282,9 +301,11 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData) {
 
     context.sheetId = sheet.getSheetId();
     context.sheetName = sheet.getName();
-    context.filterMetadata = filterMetadata;
-    context.manualMetadata = manualMetadata;
+    context.filterMetadata = filterMetadata.map(row => row.slice());
+    context.manualMetadata = manualMetadata.map(row => row.slice());
     context.savedLastRow = savedLastRow;
+    context.stateFingerprint = buildSortVisibilityStateFingerprint_(context);
+    context.fingerprint = context.stateFingerprint;
     return context;
 
   } catch (error) {
@@ -338,8 +359,11 @@ function validateSortVisibilityContext_(context, sheet, data, firstRow, lastRow)
     !(context.manualKeyCounts instanceof Map) ||
     typeof context.dataFingerprint !== 'string' ||
     typeof context.stateFingerprint !== 'string' ||
+    typeof context.fingerprint !== 'string' ||
     !context.dataFingerprint ||
-    !context.stateFingerprint
+    !context.stateFingerprint ||
+    !Array.isArray(context.manualKeys) ||
+    !context.manualKeys.every(key => typeof key === 'string' && key.length > 0)
   ) {
     return { ok: false, reason: 'VISIBILITY_CONTEXT_INVALID' };
   }
@@ -350,6 +374,19 @@ function validateSortVisibilityContext_(context, sheet, data, firstRow, lastRow)
 
   if (context.dataFingerprint !== expectedDataFingerprint) {
     return { ok: false, reason: 'VISIBILITY_CONTEXT_DATA_STALE' };
+  }
+
+  const expectedStateFingerprint =
+    buildSortVisibilityStateFingerprint_(context);
+
+  if (
+    context.stateFingerprint !== expectedStateFingerprint ||
+    context.fingerprint !== context.stateFingerprint
+  ) {
+    return {
+      ok: false,
+      reason: 'VISIBILITY_CONTEXT_FINGERPRINT_STALE'
+    };
   }
 
   const candidateRows = new Set();
@@ -429,4 +466,116 @@ function validateSortVisibilityContext_(context, sheet, data, firstRow, lastRow)
   }
 
   return { ok: true };
+}
+
+
+/**
+ * Re-reads the current sheet, FilterState, ManualState and physical row state,
+ * then compares them with a previously resolved snapshot.
+ *
+ * This is the required optimistic-concurrency gate for a future transfer
+ * commit. The current sorter deliberately has no write phase and therefore
+ * does not call this helper as part of TRANSFER_NOT_VERIFIED.
+ */
+function validateSortVisibilityContextFresh_(sheet, context) {
+  if (!sheet || !context || context.ok !== true) {
+    return {
+      ok: false,
+      reason: 'VISIBILITY_CONTEXT_MISSING_OR_INVALID'
+    };
+  }
+
+  if (
+    context.sheetId !== sheet.getSheetId() ||
+    context.sheetName !== sheet.getName()
+  ) {
+    return {
+      ok: false,
+      reason: 'VISIBILITY_CONTEXT_SHEET_MISMATCH'
+    };
+  }
+
+  if (
+    !Number.isInteger(context.firstRow) ||
+    !Number.isInteger(context.lastRow) ||
+    context.firstRow !== CONFIG.firstRow
+  ) {
+    return {
+      ok: false,
+      reason: 'VISIBILITY_CONTEXT_RANGE_INVALID'
+    };
+  }
+
+  try {
+    const sheetLastRow = sheet.getLastRow();
+
+    if (sheetLastRow < CONFIG.firstRow) {
+      return {
+        ok: false,
+        reason: 'VISIBILITY_CONTEXT_BOUNDARY_STALE'
+      };
+    }
+
+    const currentUpperData = sheet.getRange(
+      CONFIG.firstRow,
+      CONFIG.sortStartCol,
+      sheetLastRow - CONFIG.firstRow + 1,
+      CONFIG.sortWidth
+    ).getValues();
+
+    const currentLastRow = getLastScenarioRowFromData(currentUpperData);
+
+    if (currentLastRow !== context.lastRow) {
+      return {
+        ok: false,
+        reason: 'VISIBILITY_CONTEXT_BOUNDARY_STALE',
+        expectedLastRow: context.lastRow,
+        currentLastRow: currentLastRow
+      };
+    }
+
+    const currentData = currentUpperData
+      .slice(0, currentLastRow - CONFIG.firstRow + 1)
+      .map(row => row.slice(0, CONFIG.sortWidth));
+
+    const freshContext = readSortVisibilityContext_(
+      sheet,
+      currentLastRow,
+      currentData
+    );
+
+    if (!freshContext.ok) {
+      return {
+        ok: false,
+        reason: 'VISIBILITY_CONTEXT_FRESH_READ_FAILED',
+        detail: freshContext.reason || null
+      };
+    }
+
+    if (freshContext.dataFingerprint !== context.dataFingerprint) {
+      return {
+        ok: false,
+        reason: 'VISIBILITY_CONTEXT_DATA_STALE'
+      };
+    }
+
+    if (freshContext.stateFingerprint !== context.stateFingerprint) {
+      return {
+        ok: false,
+        reason: 'VISIBILITY_CONTEXT_STATE_STALE'
+      };
+    }
+
+    return {
+      ok: true,
+      context: freshContext
+    };
+
+  } catch (error) {
+    return {
+      ok: false,
+      reason: 'VISIBILITY_CONTEXT_FRESH_READ_ERROR',
+      message: error && error.message ? error.message : String(error)
+    };
+  }
 }

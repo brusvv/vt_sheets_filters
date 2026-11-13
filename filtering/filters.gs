@@ -234,6 +234,42 @@ function applyFilters(
       }
     );
 
+    // A reset shows every row before rebuilding visibility. If the
+    // pre-reset resolver could not classify the current state, do not run
+    // showRows() and risk exposing an unmapped manual exclusion.
+    if (
+      autoSortEnabled &&
+      resetVisibility &&
+      (!sortVisibilityContext || !sortVisibilityContext.ok)
+    ) {
+      const reason = sortVisibilityContext
+        ? sortVisibilityContext.reason
+        : 'VISIBILITY_CONTEXT_MISSING';
+
+      status = 'SORT_VISIBILITY_BLOCKED';
+
+      triggerPerfEvent_(
+        perfTrace,
+        'FILTERS_ABORTED_UNRESOLVED_SORT_VISIBILITY',
+        {
+          sheet: sheet.getName(),
+          reason: reason,
+          resetVisibility: true
+        }
+      );
+
+      triggerPerfEnd_(perfTrace, status, {
+        sheet: sheet.getName(),
+        reason: reason
+      });
+
+      return {
+        status: status,
+        applied: false,
+        reason: reason
+      };
+    }
+
     // --------------------------------------------------
     // 5. Подготовка FilterState и ManualState
     // --------------------------------------------------
@@ -249,18 +285,67 @@ function applyFilters(
     // 6. Построение новой фильтрационной видимости
     // --------------------------------------------------
 
-    let resolvedManualHiddenRows = null;
-
-    if (
+    const manualVisibilityResolved = Boolean(
+      autoSortEnabled &&
       sortVisibilityContext &&
       sortVisibilityContext.ok &&
       sortManualCountsEqual_(
         sortVisibilityContext.manualKeyCounts,
         filterState.manualHiddenCounts
       )
-    ) {
-      resolvedManualHiddenRows = sortVisibilityContext.manualHiddenRows;
+    );
 
+    const hasManualStateEvidence =
+      filterState.manualHiddenCounts.size > 0 ||
+      Boolean(
+        sortVisibilityContext &&
+        sortVisibilityContext.ok &&
+        (
+          sortVisibilityContext.manualKeyCounts.size > 0 ||
+          sortVisibilityContext.manualHiddenRows.size > 0
+        )
+      );
+
+    const unresolvedManualState =
+      autoSortEnabled &&
+      !manualVisibilityResolved &&
+      hasManualStateEvidence;
+
+    if (unresolvedManualState) {
+      const reason = sortVisibilityContext
+        ? (sortVisibilityContext.reason || 'SORT_VISIBILITY_CONTEXT_STALE')
+        : 'VISIBILITY_CONTEXT_MISSING';
+
+      status = 'SORT_VISIBILITY_BLOCKED';
+
+      triggerPerfEvent_(
+        perfTrace,
+        'FILTERS_ABORTED_UNRESOLVED_MANUALSTATE',
+        {
+          sheet: sheet.getName(),
+          reason: reason,
+          manualKeys: filterState.manualHiddenCounts.size,
+          resetVisibility: resetVisibility
+        }
+      );
+
+      triggerPerfEnd_(perfTrace, status, {
+        sheet: sheet.getName(),
+        reason: reason
+      });
+
+      return {
+        status: status,
+        applied: false,
+        reason: 'UNRESOLVED_MANUALSTATE_VISIBILITY',
+        detail: reason
+      };
+    }
+
+    let resolvedManualHiddenRows = null;
+
+    if (manualVisibilityResolved) {
+      resolvedManualHiddenRows = sortVisibilityContext.manualHiddenRows;
     } else if (sortVisibilityContext && sortVisibilityContext.ok) {
       triggerPerfEvent_(
         perfTrace,
