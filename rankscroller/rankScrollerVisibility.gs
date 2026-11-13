@@ -41,7 +41,7 @@ function showRankScrollerColumns_(
   visibleColumns
 ) {
   if (
-    !sheet ||
+    !isRankScrollerSheetAllowed_(sheet) ||
     !Number.isInteger(startColumn) ||
     !Number.isInteger(totalColumns) ||
     !Number.isInteger(currentColumn) ||
@@ -101,7 +101,7 @@ function showRankScrollerTierColumns_(
   energyValues
 ) {
   if (
-    !sheet ||
+    !isRankScrollerSheetAllowed_(sheet) ||
     !Number.isInteger(startColumn) ||
     !Number.isInteger(totalColumns) ||
     totalColumns < 1 ||

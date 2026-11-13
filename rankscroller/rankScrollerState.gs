@@ -144,3 +144,74 @@ function markAllRankSheetsDirty() {
 function resetRankSheetDirty_(propertiesToSave, sheetName) {
   propertiesToSave['rankDirty_' + sheetName] = 'false';
 }
+
+
+
+/**
+ * Проверяет, что имя или объект листа относится
+ * к одному из разрешённых игровых листов Rank Scroller.
+ */
+function isRankScrollerSheetAllowed_(sheetOrName) {
+  const sheetName = typeof sheetOrName === 'string'
+    ? sheetOrName
+    : (
+        sheetOrName &&
+        typeof sheetOrName.getName === 'function'
+          ? sheetOrName.getName()
+          : null
+      );
+
+  return (
+    typeof sheetName === 'string' &&
+    Array.isArray(RANK_TRACKED_SHEETS) &&
+    RANK_TRACKED_SHEETS.includes(sheetName)
+  );
+}
+
+
+/**
+ * Fail-closed проверка конфигурации Rank Scroller.
+ *
+ * CONFIG.rankScroller.sheets и RANK_TRACKED_SHEETS
+ * должны содержать один и тот же набор игровых листов.
+ * Любая дополнительная цель (включая RankReqs)
+ * блокирует Rank Scroller до обращения к листам.
+ *
+ * @return {string[]}
+ */
+function validateRankScrollerConfiguration_() {
+  const configuredSheets =
+    CONFIG.rankScroller && CONFIG.rankScroller.sheets;
+
+  if (
+    !configuredSheets ||
+    typeof configuredSheets !== 'object' ||
+    Array.isArray(configuredSheets)
+  ) {
+    throw new Error(
+      'CONFIG.rankScroller.sheets is missing or invalid.'
+    );
+  }
+
+  const configuredNames = Object.keys(configuredSheets);
+  const unexpectedNames = configuredNames.filter(
+    name => !isRankScrollerSheetAllowed_(name)
+  );
+
+  const missingNames = RANK_TRACKED_SHEETS.filter(
+    name => !Object.prototype.hasOwnProperty.call(
+      configuredSheets,
+      name
+    )
+  );
+
+  if (unexpectedNames.length || missingNames.length) {
+    throw new Error(
+      'Rank Scroller configuration must contain exactly the tracked gameplay sheets. ' +
+      'Unexpected: [' + unexpectedNames.join(', ') + ']; ' +
+      'missing: [' + missingNames.join(', ') + '].'
+    );
+  }
+
+  return RANK_TRACKED_SHEETS.slice();
+}

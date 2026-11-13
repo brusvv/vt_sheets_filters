@@ -28,6 +28,13 @@ function getTargetSheet(sheetName = null, spreadsheet = null) {
       : CONFIG.sheetName;
   }
 
+  if (!RANK_TRACKED_SHEETS.includes(targetName)) {
+    throw new Error(
+      `Недопустимый целевой лист: "${targetName}". Ожидается один из игровых листов: ` +
+      RANK_TRACKED_SHEETS.join(', ')
+    );
+  }
+
   const sheet = spreadsheet.getSheetByName(targetName);
 
   if (!sheet) {

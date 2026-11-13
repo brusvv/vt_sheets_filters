@@ -68,6 +68,20 @@ function rankScroller(
   try {
     const totalStartedAt = Date.now();
 
+    // Fail closed before resolving or mutating any target sheet.
+    const allowedSheetNames =
+      validateRankScrollerConfiguration_();
+
+    if (
+      targetSheetName !== null &&
+      !isRankScrollerSheetAllowed_(targetSheetName)
+    ) {
+      throw new Error(
+        'Unknown Rank Scroller target sheet: ' +
+        targetSheetName
+      );
+    }
+
     // Получение Spreadsheet.
     if (!spreadsheet) {
       const stepStartedAt = Date.now();
@@ -100,12 +114,12 @@ function rankScroller(
     );
 
     // Конфигурация листов и расположения диапазонов.
-    const energyRanges = Object.entries(
-      CONFIG.rankScroller.sheets
-    ).map(([sheetName, config]) => ({
-      sheetName: sheetName,
-      ...config
-    }));
+    const energyRanges = allowedSheetNames.map(
+      sheetName => ({
+        sheetName: sheetName,
+        ...CONFIG.rankScroller.sheets[sheetName]
+      })
+    );
 
     // Проверка имени принудительно выбранного листа.
     stepStartedAt = Date.now();

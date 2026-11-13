@@ -153,7 +153,24 @@ function readRankScrollerSheetData_(
     );
   };
 
-  // Получаем рабочий лист.
+  // Reject unsupported names before asking Spreadsheet for a Sheet.
+  if (
+    !config ||
+    !isRankScrollerSheetAllowed_(config.sheetName)
+  ) {
+    recordEvent(
+      'RANK_SCROLLER_UNSUPPORTED_SHEET',
+      {
+        sheet: config && config.sheetName
+          ? config.sheetName
+          : null
+      }
+    );
+
+    return { success: false };
+  }
+
+  // Получаем только канонический игровой лист.
   let stepStartedAt = Date.now();
 
   const sheet =
@@ -167,7 +184,11 @@ function readRankScrollerSheetData_(
     }
   );
 
-  if (!sheet) {
+  if (
+    !sheet ||
+    sheet.getName() !== config.sheetName ||
+    !isRankScrollerSheetAllowed_(sheet)
+  ) {
     recordEvent(
       'RANK_SCROLLER_SHEET_NOT_FOUND',
       {

@@ -53,6 +53,16 @@ function applyFilters(
 
     const sheet = targetSheet || getTargetSheet();
 
+    if (
+      !sheet ||
+      !RANK_TRACKED_SHEETS.includes(sheet.getName())
+    ) {
+      throw new Error(
+        'Filters accept only tracked gameplay sheets: ' +
+        RANK_TRACKED_SHEETS.join(', ')
+      );
+    }
+
     const sheetLastRow = knownLastRow !== null
       ? knownLastRow
       : sheet.getLastRow();
