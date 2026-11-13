@@ -272,6 +272,7 @@ function createFixture() {
     triggerPerfEvent_: noOp,
     triggerPerfEnd_: noOp,
     operationPerfStep_: noOp,
+    operationPerfEnd_: noOp,
     logFilterTiming: noOp
   });
 
