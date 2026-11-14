@@ -294,6 +294,31 @@ function sortScenarioBlocksDetailed_(
       };
     }
 
+    // Keep the legacy fail-closed path explicit when live transfer has
+    // not passed the disposable-workbook integration gate. Besides preserving
+    // the public status contract, this allows resolver/planner-only runtimes
+    // to operate without loading the transfer module.
+    if (CONFIG.visibleSortTransferEnabled !== true) {
+      console.warn('[VISIBLE SORT] TRANSFER_NOT_VERIFIED', JSON.stringify({
+        sheet: sheet.getName(),
+        sortType: sortType,
+        blocks: plan.blocks.length,
+        visibleRows: plan.blocks.reduce(
+          (total, block) => total + block.visibleRows.length,
+          0
+        ),
+        reason: 'TRANSFER_FEATURE_DISABLED_UNTIL_LIVE_VALIDATION'
+      }));
+      return {
+        status: 'TRANSFER_NOT_VERIFIED',
+        applied: false,
+        reason: 'TRANSFER_FEATURE_DISABLED_UNTIL_LIVE_VALIDATION',
+        plan: plan,
+        visibilityContext: knownVisibilityMask,
+        fingerprint: knownVisibilityMask.stateFingerprint
+      };
+    }
+
     const transferStarted = Date.now();
     const transferResult = transferVisibleSortPlan_(
       sheet,
