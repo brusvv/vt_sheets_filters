@@ -18,7 +18,9 @@ const FORMAT_METHODS = [
   'getHorizontalAlignments',
   'getVerticalAlignments',
   'getWraps',
-  'getTextRotations'
+  'getTextRotations',
+  'getTextDirections',
+  'getTextStyles'
 ];
 
 function clone(value) {
@@ -73,7 +75,9 @@ function defaultCell(value = '') {
       getHorizontalAlignments: 'left',
       getVerticalAlignments: 'middle',
       getWraps: false,
-      getTextRotations: 'ROTATION_0'
+      getTextRotations: 'ROTATION_0',
+      getTextDirections: 'LEFT_TO_RIGHT',
+      getTextStyles: 'normal'
     })[method];
   });
   return {
