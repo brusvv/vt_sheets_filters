@@ -470,7 +470,7 @@ test('changed permutation is planned but no source, destination, or state write 
     () => project.sortScenarioBlocks(
       sheet, 'scoreDesc', 4, null, data, context
     ),
-    error => error && error.code === 'FULL_CELL_STAGING_ROUND_TRIP_NOT_VERIFIED'
+    error => error && error.code === 'TRANSFER_FEATURE_DISABLED_UNTIL_LIVE_VALIDATION'
   );
   assert.equal(writes, 0);
 });
