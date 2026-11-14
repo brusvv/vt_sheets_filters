@@ -1833,3 +1833,8 @@ Tests use the Node built-in test runner and load Apps Script source into an isol
     node --test tests/*.test.cjs
 
 The repository includes a GitHub Actions workflow that runs this suite on pushes to `chore/organize-repository` and on pull requests. These are local/unit tests, not live Google Sheets API experiments. They do not prove formula relocation, rich text/notes/validation preservation, batchUpdate atomicity in the live workbook, or live concurrency.
+
+
+## Visible Sort Transfer
+
+The staged visible-row transfer implementation and its rollout gate are documented in [docs/visible-sort-transfer.md](docs/visible-sort-transfer.md). The feature flag remains disabled until the live integration test passes on a disposable workbook.

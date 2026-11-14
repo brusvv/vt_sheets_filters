@@ -29,6 +29,10 @@ const CONFIG = {
   sortStartCol: 3,
   sortWidth: 10,
 
+  // Безопасный Visible Sort Transfer остаётся выключенным до успешного
+  // интеграционного теста на отдельной копии Google Spreadsheet.
+  visibleSortTransferEnabled: false,
+
   // Смещения относительно диапазона C:L.
   sortScoreOffset: 3,
   sortDotsOffset: 7,
