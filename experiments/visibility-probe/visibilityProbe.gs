@@ -998,3 +998,5 @@ function visibilityProbeError_(stage, error, extra) {
 function visibilityProbeLogReport_(report) {
   var json = JSON.stringify(report);
   if (typeof Logger !== 'undefined' && Logger.log) Logger.log(json);
+  return report;
+}
