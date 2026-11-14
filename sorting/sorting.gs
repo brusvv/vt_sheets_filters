@@ -294,25 +294,27 @@ function sortScenarioBlocksDetailed_(
       };
     }
 
-    console.warn('[VISIBLE SORT] TRANSFER_NOT_VERIFIED', JSON.stringify({
-      sheet: sheet.getName(),
-      sortType: sortType,
-      blocks: plan.blocks.length,
-      visibleRows: plan.blocks.reduce(
-        (total, block) => total + block.visibleRows.length,
-        0
-      ),
-      reason: 'FULL_CELL_STAGING_ROUND_TRIP_NOT_VERIFIED'
-    }));
+    const transferStarted = Date.now();
+    const transferResult = transferVisibleSortPlan_(
+      sheet,
+      plan,
+      knownVisibilityMask,
+      perfTrace
+    );
+    if (perfTrace) {
+      sortPerfStep_(perfTrace, 'Visible transfer', transferStarted, {
+        status: transferResult.status,
+        applied: transferResult.applied === true,
+        reason: transferResult.reason || null,
+        rowsMoved: transferResult.rowsMoved || 0
+      });
+    }
 
-    return {
-      status: 'TRANSFER_NOT_VERIFIED',
-      applied: false,
-      reason: 'FULL_CELL_STAGING_ROUND_TRIP_NOT_VERIFIED',
+    return Object.assign({}, transferResult, {
       plan: plan,
       visibilityContext: knownVisibilityMask,
       fingerprint: knownVisibilityMask.stateFingerprint
-    };
+    });
 
   } catch (error) {
     return {
