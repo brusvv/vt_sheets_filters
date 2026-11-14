@@ -27,7 +27,9 @@ const VISIBLE_SORT_TRANSFER_FORMAT_METHODS_ = [
   'getHorizontalAlignments',
   'getVerticalAlignments',
   'getWraps',
-  'getTextRotations'
+  'getTextRotations',
+  'getTextDirections',
+  'getTextStyles'
 ];
 
 /**
@@ -835,6 +837,9 @@ function normalizeVisibleSortTransferValue_(value) {
         angle: typeof value.getAngle === 'function' ? value.getAngle() : null,
         vertical: typeof value.isVertical === 'function' ? value.isVertical() : null
       };
+    }
+    if (typeof value.isBold === 'function' || typeof value.getFontFamily === 'function') {
+      return describeVisibleSortTextStyle_(value);
     }
     return String(value);
   }
