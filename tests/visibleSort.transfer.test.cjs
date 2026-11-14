@@ -691,12 +691,12 @@ test('values, R1C1 formulas, formatting, notes, rich text, and validation are pr
 
   assert.equal(result.status, 'SUCCESS');
   const highRow = 3;
-  assert.equal(fixture.getCell(highRow, 4).value, 'linked label');
-  assert.equal(fixture.getCell(highRow, 4).note, 'row note');
-  assert.equal(fixture.getCell(highRow, 4).richText.linkUrl, 'https://example.com');
-  assert.equal(fixture.getCell(highRow, 4).format.getBackgrounds, '#ffeecc');
-  assert.equal(fixture.getCell(5, 5).formulaR1C1, '=RC[-2]*2');
-  assert.equal(fixture.getCell(3, 6).validation.criteriaType, 'TEXT_CONTAINS');
+  assert.equal(fixture.getCell(5, 4).value, 'linked label');
+  assert.equal(fixture.getCell(5, 4).note, 'row note');
+  assert.equal(fixture.getCell(5, 4).richText.linkUrl, 'https://example.com');
+  assert.equal(fixture.getCell(5, 4).format.getBackgrounds, '#ffeecc');
+  assert.equal(fixture.getCell(3, 5).formulaR1C1, '=RC[-2]*2');
+  assert.equal(fixture.getCell(4, 6).validation.criteriaType, 'TEXT_CONTAINS');
 });
 
 test('cells outside C:L and hidden-row positions remain unchanged', () => {
