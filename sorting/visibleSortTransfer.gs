@@ -132,6 +132,16 @@ function transferVisibleSortPlan_(
     ) {
       return finish('TRANSFER_NOT_VERIFIED', false, 'SORT_PLAN_CONTEXT_RANGE_MISMATCH');
     }
+    if (
+      Array.isArray(visibilityContext.physicalHiddenByFilter) &&
+      visibilityContext.physicalHiddenByFilter.some(Boolean)
+    ) {
+      return finish(
+        'TRANSFER_NOT_VERIFIED',
+        false,
+        'FILTER_HIDDEN_ROWS_UNSUPPORTED_BY_RESOLVER'
+      );
+    }
 
     const moves = flattenVisibleSortMoves_(plan);
     if (moves.length === 0) {
