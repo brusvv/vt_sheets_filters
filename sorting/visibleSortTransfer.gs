@@ -872,13 +872,21 @@ function writeVisibleSortTransferLedger_(
   sheetId,
   details
 ) {
+  const previous = (ledger || []).find(entry => entry.id === operationId);
+  const previousDetails = previous && previous.details &&
+    typeof previous.details === 'object'
+    ? previous.details
+    : {};
+  const nextDetails = details && typeof details === 'object'
+    ? Object.assign({}, previousDetails, details)
+    : previousDetails;
   const next = (ledger || []).filter(entry => entry.id !== operationId);
   next.push({
     id: operationId,
     status: status,
     sheetId: sheetId,
     updatedAt: Date.now(),
-    details: details || null
+    details: Object.keys(nextDetails).length ? nextDetails : null
   });
   properties.setProperty(
     VISIBLE_SORT_TRANSFER_LEDGER_KEY_,
