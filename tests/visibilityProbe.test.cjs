@@ -504,7 +504,7 @@ test('benchmark excludes incomplete API responses from successful timing percent
     Sheets: { Spreadsheets: { get() {
       apiCall++;
       if (apiCall === 2) {
-        return gridResponse(7, [{ startRow: 2, startColumn: 0, rowMetadata: [{}] }]);
+        return gridResponse(7, [{ startRow: 2, startColumn: 0, rowMetadata: [null] }]);
       }
       return gridResponse(7, [{ startRow: 2, startColumn: 0, rowMetadata: [
         { hiddenByUser: false, hiddenByFilter: false }
