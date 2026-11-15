@@ -985,3 +985,71 @@ test('format fidelity other than F horizontal alignment remains enforced in colu
   assert.equal(result.status, 'BLOCKED_STAGING');
   assert.equal(result.writeAttempted, false);
 });
+
+
+test('conditional background differences in column G do not block transfer', () => {
+  const data = [
+    makeRow('A', 10, 'A', 'low'),
+    makeRow('A', 30, 'C', 'high'),
+    makeRow('A', 20, 'B', 'middle')
+  ];
+  const fixture = makeWorkbook(data, [true, true, true]);
+  fixture.target.setCell(3, 7, {
+    value: 'G content',
+    format: {
+      getBackgrounds: '#b1f1ef',
+      getFontColors: '#000000'
+    }
+  });
+  const built = makePlan(fixture, data, [true, true, true]);
+  const originalBatchUpdate = fixture.project.Sheets.Spreadsheets.batchUpdate;
+  fixture.project.Sheets.Spreadsheets.batchUpdate = function(resource, spreadsheetId) {
+    const result = originalBatchUpdate(resource, spreadsheetId);
+    (resource.requests || []).forEach(request => {
+      const copy = request.copyPaste;
+      if (copy && copy.destination.sheetId !== fixture.target.getSheetId()) {
+        const stage = fixture.sheets.get(copy.destination.sheetId);
+        if (stage) stage.getCell(3, 7).format.getBackgrounds = '#e7baf6';
+      }
+    });
+    return result;
+  };
+
+  const result = runTransfer(fixture, built);
+
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal(result.applied, true);
+});
+
+test('format fidelity other than G background remains enforced in column G', () => {
+  const data = [
+    makeRow('A', 10, 'A', 'low'),
+    makeRow('A', 30, 'C', 'high'),
+    makeRow('A', 20, 'B', 'middle')
+  ];
+  const fixture = makeWorkbook(data, [true, true, true]);
+  fixture.target.setCell(3, 7, {
+    format: {
+      getBackgrounds: '#b1f1ef',
+      getFontColors: '#000000'
+    }
+  });
+  const built = makePlan(fixture, data, [true, true, true]);
+  const originalBatchUpdate = fixture.project.Sheets.Spreadsheets.batchUpdate;
+  fixture.project.Sheets.Spreadsheets.batchUpdate = function(resource, spreadsheetId) {
+    const result = originalBatchUpdate(resource, spreadsheetId);
+    (resource.requests || []).forEach(request => {
+      const copy = request.copyPaste;
+      if (copy && copy.destination.sheetId !== fixture.target.getSheetId()) {
+        const stage = fixture.sheets.get(copy.destination.sheetId);
+        if (stage) stage.getCell(3, 7).format.getFontColors = '#a739ca';
+      }
+    });
+    return result;
+  };
+
+  const result = runTransfer(fixture, built);
+
+  assert.equal(result.status, 'BLOCKED_STAGING');
+  assert.equal(result.writeAttempted, false);
+});
