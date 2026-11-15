@@ -27,7 +27,8 @@ function applyFilters(
   optionsValues = null,
   parentTrace = null,
   knownLastRow = null,
-  knownFilterState = null
+  knownFilterState = null,
+  knownSortStateContext = null
 ) {
   const perfTrace = triggerPerfStart_(
     'applyFilters',
@@ -289,11 +290,17 @@ function applyFilters(
     // 5. Подготовка FilterState и ManualState
     // --------------------------------------------------
 
+    const reusableSortStateContext =
+      !sortChanged && sortVisibilityContext && sortVisibilityContext.ok
+        ? sortVisibilityContext
+        : knownSortStateContext;
+
     const filterState = prepareFilterState_(
       sheet,
       numRows,
       knownFilterState,
-      perfTrace
+      perfTrace,
+      reusableSortStateContext
     );
 
     // --------------------------------------------------
@@ -395,7 +402,7 @@ function applyFilters(
 
     } else if (filterState.hasKnownFilterState) {
       previousFilterVisibility =
-        knownFilterState.previousVisibility.slice(0, numRows);
+        filterState.previousVisibility.slice(0, numRows);
 
     } else {
       previousFilterVisibility = getPreviousVisibility(
@@ -540,8 +547,19 @@ function prepareFilterState_(
   sheet,
   numRows,
   knownFilterState,
-  perfTrace
+  perfTrace,
+  knownSortStateContext = null
 ) {
+  const hasKnownSortState = Boolean(
+    knownSortStateContext &&
+    knownSortStateContext.ok === true &&
+    knownSortStateContext.stateSheet &&
+    Array.isArray(knownSortStateContext.stateMetadataValues) &&
+    Array.isArray(knownSortStateContext.filterVisibility) &&
+    knownSortStateContext.filterVisibility.length >= numRows &&
+    knownSortStateContext.manualKeyCounts instanceof Map
+  );
+
   const hasKnownFilterState = Boolean(
     knownFilterState &&
     knownFilterState.stateSheet &&
@@ -556,8 +574,9 @@ function prepareFilterState_(
   const filterStateSheet = hasKnownFilterState
     ? knownFilterState.stateSheet
     : (
-        FILTER_STATE_LAYOUT_CACHE ||
-        getFilterStateSheet()
+        hasKnownSortState
+          ? knownSortStateContext.stateSheet
+          : (FILTER_STATE_LAYOUT_CACHE || getFilterStateSheet())
       );
 
   filterPerfStep_(
@@ -574,9 +593,11 @@ function prepareFilterState_(
 
   stepStarted = Date.now();
 
-  const stateMetadataValues = filterStateSheet
-    .getRange('A1:Q2')
-    .getValues();
+  const stateMetadataValues = hasKnownSortState && !hasKnownFilterState
+    ? knownSortStateContext.stateMetadataValues.map(row => row.slice())
+    : filterStateSheet
+        .getRange('A1:Q2')
+        .getValues();
 
   if (!hasKnownFilterState) {
     ensureFilterStateLayout(
@@ -626,11 +647,13 @@ function prepareFilterState_(
 
   stepStarted = Date.now();
 
-  const manualHiddenCounts = loadManualHiddenKeyCounts_(
-    sheet,
-    filterStateSheet,
-    manualStateMetadata
-  );
+  const manualHiddenCounts = hasKnownSortState
+    ? new Map(knownSortStateContext.manualKeyCounts)
+    : loadManualHiddenKeyCounts_(
+        sheet,
+        filterStateSheet,
+        manualStateMetadata
+      );
 
   filterPerfStep_(
     perfTrace,
@@ -642,7 +665,10 @@ function prepareFilterState_(
   );
 
   return {
-    hasKnownFilterState: hasKnownFilterState,
+    hasKnownFilterState: hasKnownFilterState || hasKnownSortState,
+    previousVisibility: hasKnownFilterState
+      ? knownFilterState.previousVisibility.slice()
+      : (hasKnownSortState ? knownSortStateContext.filterVisibility.slice() : null),
     filterStateSheet: filterStateSheet,
     filterStateColumns: filterStateColumns,
     manualStateColumns: manualStateColumns,
