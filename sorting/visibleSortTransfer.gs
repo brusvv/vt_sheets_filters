@@ -580,11 +580,11 @@ function transferVisibleSortPlan_(
       ).getValues().map(row => row[0]);
       const scoreMismatches = [];
       for (let index = 0; index < diagnostic.rowCount; index++) {
-        if (JSON.stringify(diagnostic.expectedScoreValues[index]) !==
+        if (JSON.stringify(diagnostic.outputStageScoreValues[index]) !==
             JSON.stringify(actualScoreValues[index])) {
           scoreMismatches.push({
             row: diagnostic.destinationStartRow + index,
-            expected: diagnostic.expectedScoreValues[index],
+            expected: diagnostic.outputStageScoreValues[index],
             actual: actualScoreValues[index]
           });
         }
