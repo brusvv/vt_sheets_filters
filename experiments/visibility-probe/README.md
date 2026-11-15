@@ -9,7 +9,7 @@ For the same configured physical row ranges, the probe reads these two independe
 - `hiddenByUser` via `Sheet.isRowHiddenByUser(rowNumber)` and `GridData.rowMetadata[].hiddenByUser`.
 - `hiddenByFilter` via `Sheet.isRowHiddenByFilter(rowNumber)` and `GridData.rowMetadata[].hiddenByFilter`.
 
-Missing boolean fields are never converted to `false`. Missing metadata, absent booleans, invalid types, missing rows, duplicate row metadata, invalid `GridData.startRow`, out-of-range metadata and API errors stay explicit. API mapping uses `sheetId` and each `GridData.startRow`; it never uses response-array order.
+A present `rowMetadata` object with an omitted Boolean property is interpreted as the protobuf JSON default `false`. This is distinct from missing/invalid row metadata: absent row metadata objects, invalid Boolean types, missing rows, duplicate row metadata, invalid `GridData.startRow`, out-of-range metadata and API errors remain incomplete or errors. API mapping uses `sheetId` and each `GridData.startRow`; it never uses response-array order.
 
 The tool is read-only: it does not edit cells, visibility, filters, sheet state, FilterState, ManualState, project settings, or triggers. It does not read cell values. It writes one structured JSON report to the Apps Script execution log and returns the same report.
 
@@ -128,7 +128,7 @@ The probe makes one Advanced Sheets API request per API sample:
 
 The `fields` mask is what requests the selected `GridData` fields. No `CellData` or cell values are requested. Each returned sheet is selected by `properties.sheetId`. Within it, each `GridData` maps `rowMetadata[index]` to physical row `startRow + index + 1`, since `startRow` is zero-based. Multiple `GridData` segments can contribute different parts of the configured ranges.
 
-The probe does not infer a missing field to be false. A duplicate candidate or missing metadata row is not silently selected. Metadata outside the requested physical row set is recorded as an error and makes the API result incomplete. `rowMetadata` array length is reported as returned; it is not padded to the requested row count.
+For a valid row metadata object, an omitted `hiddenByUser` or `hiddenByFilter` property is interpreted as `false`, matching the default-value omission behavior of protobuf JSON serialization. Explicit `true` and `false` values are preserved. This inference is limited to the two requested Boolean fields on a present metadata object; it does not apply when the metadata object or row is missing, duplicated, or malformed. Metadata outside the requested physical row set is recorded as an error and makes the API result incomplete. `rowMetadata` array length is reported as returned; it is not padded to the requested row count.
 
 The `responseJsonUtf8Bytes` value is the UTF-8 size of `JSON.stringify()` over the Advanced Service response object. It is not a claim about exact HTTP wire bytes.
 
@@ -186,9 +186,9 @@ The example is only a schema illustration and is not a live result.
 
 ## Interpreting mismatches
 
-- `MATCH` means both APIs returned a Boolean for that field and the values agree for that physical row.
+- `MATCH` means both APIs resolve to the same Boolean for that physical row. An omitted API Boolean on a present `rowMetadata` object resolves to the default `false`.
 - `MISMATCH` means both values are present but differ. Keep the two flags independent; a difference in one does not imply a difference in the other.
-- `UNAVAILABLE_API`, `UNAVAILABLE_APPS_SCRIPT`, `MISSING`, `INVALID_TYPE`, `MISSING_ROW_METADATA`, `DUPLICATE_ROW_METADATA`, and `INCOMPLETE` are not matches and must not be treated as false.
+- `UNAVAILABLE_API`, `UNAVAILABLE_APPS_SCRIPT`, `INVALID_TYPE`, `MISSING_ROW_METADATA`, `DUPLICATE_ROW_METADATA`, and `INCOMPLETE` are not matches and must not be treated as false.
 - `apiStatus: SUCCESS` means all requested physical rows had exactly one metadata candidate with both Boolean fields. It does not assert semantic equivalence to Apps Script.
 - A Filter View mismatch is an expected possibility that must be captured, not normalized away.
 
