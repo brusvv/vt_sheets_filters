@@ -925,7 +925,11 @@ function visibilityProbeReadApiBoolean_(metadata, field) {
     return { value: null, present: false, status: 'ROW_METADATA_INVALID' };
   }
   if (!Object.prototype.hasOwnProperty.call(metadata, field)) {
-    return { value: null, present: false, status: 'MISSING' };
+    // Sheets API uses protobuf JSON serialization: default false Boolean
+    // values may be omitted. A present rowMetadata object plus an explicitly
+    // requested Boolean field therefore represents false when the property
+    // is absent. Missing rowMetadata objects are still rejected separately.
+    return { value: false, present: false, status: 'OMITTED_DEFAULT_FALSE' };
   }
   if (typeof metadata[field] !== 'boolean') {
     return {
@@ -940,6 +944,14 @@ function visibilityProbeReadApiBoolean_(metadata, field) {
     present: true,
     status: metadata[field] ? 'PRESENT_TRUE' : 'PRESENT_FALSE'
   };
+}
+
+function visibilityProbeIsResolvedApiBoolean_(field) {
+  return field && (
+    field.status === 'PRESENT_TRUE' ||
+    field.status === 'PRESENT_FALSE' ||
+    field.status === 'OMITTED_DEFAULT_FALSE'
+  );
 }
 
 function visibilityProbeDetermineApiStatus_(rowsByNumber, ranges, sheetMatched, errors) {
@@ -957,8 +969,8 @@ function visibilityProbeDetermineApiStatus_(rowsByNumber, ranges, sheetMatched, 
     if (candidates.length !== 1) return 'INCOMPLETE';
     var user = visibilityProbeReadApiBoolean_(candidates[0].metadata, 'hiddenByUser');
     var filter = visibilityProbeReadApiBoolean_(candidates[0].metadata, 'hiddenByFilter');
-    if (user.status !== 'PRESENT_TRUE' && user.status !== 'PRESENT_FALSE') return 'INCOMPLETE';
-    if (filter.status !== 'PRESENT_TRUE' && filter.status !== 'PRESENT_FALSE') return 'INCOMPLETE';
+    if (!visibilityProbeIsResolvedApiBoolean_(user)) return 'INCOMPLETE';
+    if (!visibilityProbeIsResolvedApiBoolean_(filter)) return 'INCOMPLETE';
   }
   return 'SUCCESS';
 }
@@ -988,8 +1000,8 @@ function visibilityProbeJoinRows_(ranges, appScriptRead, apiRead) {
     );
 
     var complete = apiRowStatus === 'PRESENT' &&
-      (userField.status === 'PRESENT_TRUE' || userField.status === 'PRESENT_FALSE') &&
-      (filterField.status === 'PRESENT_TRUE' || filterField.status === 'PRESENT_FALSE') &&
+      visibilityProbeIsResolvedApiBoolean_(userField) &&
+      visibilityProbeIsResolvedApiBoolean_(filterField) &&
       app && app.status.hiddenByUser === 'OK' &&
       app.status.hiddenByFilter === 'OK';
 
@@ -1025,7 +1037,7 @@ function visibilityProbeJoinRows_(ranges, appScriptRead, apiRead) {
 
 function visibilityProbeCompare_(appsValue, appsStatus, apiField) {
   if (appsStatus !== 'OK' || typeof appsValue !== 'boolean') return 'UNAVAILABLE_APPS_SCRIPT';
-  if (apiField.status !== 'PRESENT_TRUE' && apiField.status !== 'PRESENT_FALSE') return 'UNAVAILABLE_API';
+  if (!visibilityProbeIsResolvedApiBoolean_(apiField)) return 'UNAVAILABLE_API';
   return appsValue === apiField.value ? 'MATCH' : 'MISMATCH';
 }
 
@@ -1073,7 +1085,11 @@ function visibilityProbeBuildSummary_(rows) {
     ['hiddenByUser', 'hiddenByFilter'].forEach(function(field) {
       var apiStatus = row.sheetsApiFieldStatus[field];
       var appStatus = row.appsScriptFieldStatus[field];
-      if (apiStatus !== 'PRESENT_TRUE' && apiStatus !== 'PRESENT_FALSE') {
+      if (
+        apiStatus !== 'PRESENT_TRUE' &&
+        apiStatus !== 'PRESENT_FALSE' &&
+        apiStatus !== 'OMITTED_DEFAULT_FALSE'
+      ) {
         summary.missingApiFieldCount++;
         summary.missingValueCount++;
       }
