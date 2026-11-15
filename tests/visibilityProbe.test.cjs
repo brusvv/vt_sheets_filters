@@ -163,16 +163,17 @@ test('missing rowMetadata array is reported, not interpreted as visible rows', (
   assert.equal(mapped.errors[0].code, 'ROW_METADATA_ARRAY_MISSING');
 });
 
-test('missing Boolean fields remain null with MISSING status, never false', () => {
+test('omitted Boolean fields in a present rowMetadata object resolve to default false', () => {
   const probe = loadProbe();
-  const user = probe.visibilityProbeReadApiBoolean_({ hiddenByFilter: false }, 'hiddenByUser');
-  const filter = probe.visibilityProbeReadApiBoolean_({ hiddenByFilter: false }, 'hiddenByFilter');
-  assert.equal(user.value, null);
+  const user = probe.visibilityProbeReadApiBoolean_({ hiddenByFilter: true }, 'hiddenByUser');
+  const filter = probe.visibilityProbeReadApiBoolean_({}, 'hiddenByFilter');
+  assert.equal(user.value, false);
   assert.equal(user.present, false);
-  assert.equal(user.status, 'MISSING');
+  assert.equal(user.status, 'OMITTED_DEFAULT_FALSE');
   assert.equal(filter.value, false);
-  assert.equal(filter.present, true);
-  assert.equal(filter.status, 'PRESENT_FALSE');
+  assert.equal(filter.present, false);
+  assert.equal(filter.status, 'OMITTED_DEFAULT_FALSE');
+  assert.equal(probe.visibilityProbeIsResolvedApiBoolean_(user), true);
 });
 
 test('invalid Boolean types and null metadata are not coerced to false', () => {
@@ -601,14 +602,14 @@ test('invalid or missing GridData.startRow is reported without guessing physical
   assert.equal(mapped.rowsByNumber[1], undefined);
 });
 
-test('missing hiddenByFilter is incomplete independently from hiddenByUser', () => {
+test('explicit true remains true while an omitted sibling Boolean resolves to false', () => {
   const probe = loadProbe();
   const user = probe.visibilityProbeReadApiBoolean_({ hiddenByUser: true }, 'hiddenByUser');
   const filter = probe.visibilityProbeReadApiBoolean_({ hiddenByUser: true }, 'hiddenByFilter');
   assert.equal(user.status, 'PRESENT_TRUE');
   assert.equal(user.value, true);
-  assert.equal(filter.status, 'MISSING');
-  assert.equal(filter.value, null);
+  assert.equal(filter.status, 'OMITTED_DEFAULT_FALSE');
+  assert.equal(filter.value, false);
 });
 
 test('metadata returned outside requested row intervals is flagged as incomplete', () => {
