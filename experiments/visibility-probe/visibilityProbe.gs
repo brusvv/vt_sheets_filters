@@ -41,7 +41,7 @@ var VISIBILITY_PROBE_CONFIG = {
   }
 };
 
-var VISIBILITY_PROBE_VERSION = '1.3.0';
+var VISIBILITY_PROBE_VERSION = '1.4.0';
 // Keep the field mask minimal and request only the row metadata needed by the probe.
 // A fields mask already enables GridData in spreadsheets.get; includeGridData is redundant.
 var VISIBILITY_PROBE_FIELDS =
