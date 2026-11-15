@@ -41,11 +41,125 @@ var VISIBILITY_PROBE_CONFIG = {
   }
 };
 
-var VISIBILITY_PROBE_VERSION = '1.4.0';
+var VISIBILITY_PROBE_VERSION = '1.5.0';
 // Keep the field mask minimal and request only the row metadata needed by the probe.
 // A fields mask already enables GridData in spreadsheets.get; includeGridData is redundant.
 var VISIBILITY_PROBE_FIELDS =
   'sheets(properties(sheetId),data(startRow,rowMetadata(hiddenByUser,hiddenByFilter)))';
+
+/**
+ * Single-request API-only probe for the 129-row VisibilityTest fixture.
+ *
+ * Reads rows 2–130 (129 rows) using one Sheets API request. It deliberately
+ * does not call SpreadsheetApp row-visibility methods, so it can measure the
+ * API path without the slow per-row Apps Script calls.
+ *
+ * Requires the container-bound test project to target the VisibilityTest sheet.
+ * Read-only: no sheet or spreadsheet state is changed.
+ */
+function runVisibilityProbeApi129() {
+  var started = Date.now();
+  var report = {
+    probeVersion: VISIBILITY_PROBE_VERSION,
+    generatedAt: new Date().toISOString(),
+    mode: 'API_ONLY_129_ROWS',
+    status: 'NOT_STARTED',
+    spreadsheetId: null,
+    sheetId: null,
+    sheetName: null,
+    scenarioLabel: String(VISIBILITY_PROBE_CONFIG.scenarioLabel || ''),
+    requestedRange: null,
+    requestedRanges: [],
+    apiStatus: 'NOT_STARTED',
+    apiGridDataCount: 0,
+    apiRowMetadataCount: 0,
+    expectedRowCount: 129,
+    actualMappedRowCount: 0,
+    hiddenByUserTrueCount: 0,
+    hiddenByFilterTrueCount: 0,
+    falseOrDefaultFalseCount: 0,
+    performance: null,
+    errors: []
+  };
+
+  try {
+    var target = visibilityProbeResolveTarget_();
+    if (target.sheet.getName() !== 'VisibilityTest') {
+      throw new Error(
+        'API-129 probe is restricted to the VisibilityTest sheet; actual sheet: ' +
+        target.sheet.getName()
+      );
+    }
+
+    // Fixture layout: header in row 1, data in rows 2–130.
+    var ranges = visibilityProbeValidateRanges_(
+      [{ startRow: 2, numRows: 129 }],
+      target.sheet.getMaxRows()
+    );
+    visibilityProbeAddTarget_(report, target, ranges);
+
+    var apiRead = visibilityProbeReadSheetsApi_(
+      target.spreadsheet.getId(),
+      target.sheet,
+      ranges
+    );
+
+    report.apiStatus = apiRead.status;
+    report.apiGridDataCount = apiRead.gridDataCount;
+    report.apiRowMetadataCount = apiRead.rowMetadataCount;
+    report.actualMappedRowCount = Object.keys(apiRead.rowsByNumber).length;
+
+    if (apiRead.status === 'SUCCESS') {
+      var rowNumbers = visibilityProbeExpandRows_(ranges);
+      rowNumbers.forEach(function(rowNumber) {
+        var candidates = apiRead.rowsByNumber[rowNumber] || [];
+        if (candidates.length !== 1) {
+          throw new Error('Expected exactly one rowMetadata record for row ' + rowNumber + '.');
+        }
+        var metadata = candidates[0].metadata;
+        var user = visibilityProbeReadApiBoolean_(metadata, 'hiddenByUser');
+        var filter = visibilityProbeReadApiBoolean_(metadata, 'hiddenByFilter');
+        if (!visibilityProbeIsResolvedApiBoolean_(user) ||
+            !visibilityProbeIsResolvedApiBoolean_(filter)) {
+          throw new Error('Unresolved visibility metadata for row ' + rowNumber + '.');
+        }
+        if (user.value) report.hiddenByUserTrueCount++;
+        if (filter.value) report.hiddenByFilterTrueCount++;
+        if (!user.value && !filter.value) report.falseOrDefaultFalseCount++;
+      });
+    }
+
+    report.errors = apiRead.errors.slice();
+    report.performance = {
+      mode: 'SINGLE_API_REQUEST_NO_APPS_SCRIPT_VISIBILITY_CALLS',
+      totalElapsedMs: Date.now() - started,
+      requestMs: apiRead.requestMs,
+      parseMs: apiRead.parseMs,
+      totalApiMs: apiRead.requestMs === null || apiRead.parseMs === null
+        ? null
+        : apiRead.requestMs + apiRead.parseMs,
+      requestsAttempted: apiRead.requestAttempted ? 1 : 0,
+      responseJsonUtf8Bytes: apiRead.responseJsonUtf8Bytes
+    };
+
+    report.status = apiRead.status === 'SUCCESS' &&
+      report.actualMappedRowCount === 129 &&
+      report.apiRowMetadataCount === 129
+        ? 'SUCCESS'
+        : (apiRead.status === 'ERROR' ? 'ERROR' : 'INCOMPLETE');
+  } catch (error) {
+    report.status = 'ERROR';
+    report.apiStatus = report.apiStatus === 'NOT_STARTED' ? 'ERROR' : report.apiStatus;
+    report.errors.push(visibilityProbeError_('API_ONLY_129', error));
+    report.performance = {
+      mode: 'SINGLE_API_REQUEST_NO_APPS_SCRIPT_VISIBILITY_CALLS',
+      totalElapsedMs: Date.now() - started,
+      requestsAttempted: report.performance ? report.performance.requestsAttempted : 0
+    };
+  }
+
+  return visibilityProbeLogReport_(report);
+}
 
 /**
  * Small API-only diagnostic. Run this before the full probe when the Sheets API
