@@ -29,6 +29,14 @@ const CONFIG = {
   sortStartCol: 3,
   sortWidth: 10,
 
+  // Безопасный Visible Sort Transfer остаётся выключенным до успешного
+  // интеграционного теста на отдельной копии Google Spreadsheet.
+  // Пакетное чтение физической видимости через Sheets API.
+  // По умолчанию выключено до контрольного live-прогона Resolver.
+  resolverBatchVisibilityEnabled: false,
+
+  visibleSortTransferEnabled: false,
+
   // Смещения относительно диапазона C:L.
   sortScoreOffset: 3,
   sortDotsOffset: 7,

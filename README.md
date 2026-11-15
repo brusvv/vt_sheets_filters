@@ -1833,3 +1833,15 @@ Tests use the Node built-in test runner and load Apps Script source into an isol
     node --test tests/*.test.cjs
 
 The repository includes a GitHub Actions workflow that runs this suite on pushes to `chore/organize-repository` and on pull requests. These are local/unit tests, not live Google Sheets API experiments. They do not prove formula relocation, rich text/notes/validation preservation, batchUpdate atomicity in the live workbook, or live concurrency.
+
+
+## Visible Sort Transfer
+
+The staged visible-row transfer implementation and its rollout gate are documented in [docs/visible-sort-transfer.md](docs/visible-sort-transfer.md). The feature flag remains disabled until the live integration test passes on a disposable workbook.
+
+
+## Visibility Probe (isolated experiment)
+
+A read-only comparison and repeated benchmark for Apps Script physical row-visibility methods versus Advanced Sheets API `rowMetadata` is documented in [docs/visibility-probe.md](docs/visibility-probe.md). The standalone probe and both manifest variants are under [experiments/visibility-probe](experiments/visibility-probe/README.md).
+
+The experiment is deliberately isolated and is not part of production sorting/filtering. It does not change the Resolver or enable Visible Sort Transfer. Live scenario reports and benchmark measurements must be collected on a disposable Google Spreadsheet; Node tests do not substitute for that integration test.

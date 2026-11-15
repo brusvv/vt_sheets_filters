@@ -128,6 +128,12 @@ function createMockWorkbook(options = {}) {
       this.owner = owner;
     }
     getValues() {
+      this.owner.reads.push({
+        startRow: this.startRow,
+        startColumn: this.startColumn,
+        numRows: this.numRows,
+        numColumns: this.numColumns
+      });
       const result = [];
       for (let r = 0; r < this.numRows; r++) {
         const row = [];
@@ -212,6 +218,7 @@ function createMockWorkbook(options = {}) {
       this.id = id;
       this.grid = grid;
       this.parent = parent;
+      this.reads = [];
       this.hiddenRows = new Set(options.hiddenRows || [4]);
       this.filterHiddenRows = new Set(options.filterHiddenRows || []);
       this.writes = [];
@@ -655,6 +662,40 @@ test('fresh validator rejects a different target sheet', () => {
 
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'VISIBILITY_CONTEXT_SHEET_MISMATCH');
+});
+
+test('AutoSort batches Resolver metadata reads while preserving independent state refresh', () => {
+  const fixture = createMockWorkbook();
+  fixture.stateSheet.reads.length = 0;
+
+  let previousVisibilityReads = 0;
+  const originalGetPreviousVisibility = fixture.project.getPreviousVisibility;
+  fixture.project.getPreviousVisibility = function(...args) {
+    previousVisibilityReads++;
+    return originalGetPreviousVisibility.apply(this, args);
+  };
+
+  fixture.project.applyFilters(
+    false,
+    fixture.gameSheet,
+    false,
+    autoSortOptions(true),
+    null
+  );
+
+  const reads = fixture.stateSheet.reads;
+  const countReads = (row, column, rows, columns) => reads.filter(read =>
+    read.startRow === row &&
+    read.startColumn === column &&
+    read.numRows === rows &&
+    read.numColumns === columns
+  ).length;
+
+  assert.equal(countReads(1, 1, 2, 17), 2, 'Resolver and filter preparation should each read metadata once');
+  assert.equal(countReads(3, 13, 1, 1), 2, 'Resolver and filter preparation should independently read ManualState keys');
+  assert.equal(countReads(3, 4, 3, 1), 2, 'Resolver and previous-visibility validation should independently read FilterState visibility');
+  assert.equal(previousVisibilityReads, 1, 'previous visibility should retain its independent validation path');
+  assert.equal(fixture.project.FILTER_STATE_LAYOUT_CACHE, fixture.stateSheet);
 });
 
 test('AutoSort integration: TRANSFER_NOT_VERIFIED is followed by filtering with resolved manual positions and no content/state loss', () => {
