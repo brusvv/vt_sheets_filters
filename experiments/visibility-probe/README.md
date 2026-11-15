@@ -1,4 +1,4 @@
-# Visibility Probe v1.2.0
+# Visibility Probe v1.3.0
 
 Standalone diagnostic tool for comparing physical row visibility from Apps Script and the Advanced Google Sheets API. This experiment is isolated from production code and must be run only in a disposable spreadsheet / separate Apps Script project.
 
@@ -68,6 +68,18 @@ benchmark: {
 
 ## Functions
 
+### `runVisibilityProbeApiDiagnostics()`
+
+Runs only the Advanced Sheets API read and logs one compact line prefixed with
+`VISIBILITY_PROBE_API_DIAGNOSTICS`. The output includes the actual API exception
+when the request fails, or the returned sheet/GridData/rowMetadata structure
+when it succeeds. It does not print row-by-row Apps Script results, so it avoids
+the large execution-log truncation that can hide the `errors` array in the full
+probe report.
+
+Run this function first if the API request is failing or returns zero GridData.
+Copy the single diagnostic line from the execution log.
+
 ### `runVisibilityProbe()`
 
 Runs one comparison for the selected scenario. It reads all selected rows through Apps Script, makes one `Sheets.Spreadsheets.get()` call for all configured A1 ranges, maps the returned metadata, compares each flag independently, and returns/logs a JSON object.
@@ -112,8 +124,7 @@ Use the exact same row ranges for all six scenarios. Save a separate JSON line f
 The probe makes one Advanced Sheets API request per API sample:
 
 - `ranges`: all configured A1 row ranges in column A (cell values are not requested).
-- `includeGridData: true`: passed explicitly for clarity; the API documents that this parameter is ignored when a `fields` mask is set.
-- `fields`: `sheets(properties(sheetId,title),data(startRow,startColumn,rowMetadata(hiddenByUser,hiddenByFilter)))`.
+- `fields`: `sheets(properties(sheetId),data(startRow,rowMetadata(hiddenByUser,hiddenByFilter)))`. The field mask explicitly requests the GridData fields; `includeGridData` is omitted because the API ignores it whenever a field mask is present.
 
 The `fields` mask is what requests the selected `GridData` fields. No `CellData` or cell values are requested. Each returned sheet is selected by `properties.sheetId`. Within it, each `GridData` maps `rowMetadata[index]` to physical row `startRow + index + 1`, since `startRow` is zero-based. Multiple `GridData` segments can contribute different parts of the configured ranges.
 
