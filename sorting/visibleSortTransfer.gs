@@ -415,9 +415,17 @@ function transferVisibleSortPlan_(
 
     const finalWriteRequests = [];
     const scoreColumn = CONFIG.scoreCol;
-    const scoreColumnOffset = scoreColumn - startColumn;
     const writeDiagnostics = runs.map((run, runIndex) => {
-      const sourceRange = stageOutput.getRange(
+      // Each run maps a contiguous source interval in SRC to a destination
+      // interval in OUT. The final write then copies that OUT interval to the
+      // same physical rows in the target sheet.
+      const sourceStageRange = stageSource.getRange(
+        run.sourceStartRow,
+        startColumn,
+        run.rowCount,
+        width
+      );
+      const outputStageRange = stageOutput.getRange(
         run.destinationStartRow,
         startColumn,
         run.rowCount,
@@ -429,52 +437,65 @@ function transferVisibleSortPlan_(
         run.rowCount,
         width
       );
-      const expectedScoreValues = stageOutput.getRange(
+      const sourceStageScoreValues = stageSource.getRange(
+        run.sourceStartRow,
+        scoreColumn,
+        run.rowCount,
+        1
+      ).getValues().map(row => row[0]);
+      const outputStageScoreValues = stageOutput.getRange(
         run.destinationStartRow,
         scoreColumn,
         run.rowCount,
         1
       ).getValues().map(row => row[0]);
+      const runRequests = buildVisibleSortCopyPasteRequests_(
+        stageOutput.getSheetId(),
+        run.destinationStartRow,
+        sheet.getSheetId(),
+        run.destinationStartRow,
+        run.rowCount,
+        startColumn,
+        width,
+        ['PASTE_NORMAL', 'PASTE_DATA_VALIDATION']
+      );
+      const requestIndexStart = finalWriteRequests.length;
+      finalWriteRequests.push.apply(finalWriteRequests, runRequests);
 
       const diagnostic = {
         runIndex: runIndex,
-        requestIndexStart: runIndex * 2,
-        requestCount: 2,
-        sourceSheet: stageOutputName,
-        sourceSheetId: stageOutput.getSheetId(),
-        sourceRangeA1: sourceRange.getA1Notation(),
+        requestIndexStart: requestIndexStart,
+        requestCount: runRequests.length,
+        sourceStageSheet: stageSourceName,
+        sourceStageSheetId: stageSource.getSheetId(),
+        sourceStageStartRow: run.sourceStartRow,
+        sourceStageRangeA1: sourceStageRange.getA1Notation(),
+        sourceStageScoreValues: sourceStageScoreValues,
+        outputStageSheet: stageOutputName,
+        outputStageSheetId: stageOutput.getSheetId(),
+        outputStageStartRow: run.destinationStartRow,
+        outputStageRangeA1: outputStageRange.getA1Notation(),
+        outputStageScoreValues: outputStageScoreValues,
         destinationSheet: sheet.getName(),
         destinationSheetId: sheet.getSheetId(),
-        destinationRangeA1: destinationRange.getA1Notation(),
-        sourceStartRow: run.destinationStartRow,
         destinationStartRow: run.destinationStartRow,
+        destinationRangeA1: destinationRange.getA1Notation(),
         rowCount: run.rowCount,
         scoreColumn: scoreColumn,
-        expectedScoreValues: expectedScoreValues
+        copyPasteRequests: runRequests.map((request, requestOffset) => ({
+          batchRequestIndex: requestIndexStart + requestOffset,
+          pasteType: request.copyPaste.pasteType,
+          source: request.copyPaste.source,
+          destination: request.copyPaste.destination
+        }))
       };
 
       console.info('[VISIBLE SORT TRANSFER] destination run prepared', JSON.stringify({
         operationId: operationId,
-        diagnosticVersion: 1,
+        diagnosticVersion: 2,
         run: diagnostic
       }));
       return diagnostic;
-    });
-
-    runs.forEach(run => {
-      finalWriteRequests.push.apply(
-        finalWriteRequests,
-        buildVisibleSortCopyPasteRequests_(
-          stageOutput.getSheetId(),
-          run.destinationStartRow,
-          sheet.getSheetId(),
-          run.destinationStartRow,
-          run.rowCount,
-          startColumn,
-          width,
-          ['PASTE_NORMAL', 'PASTE_DATA_VALIDATION']
-        )
-      );
     });
     if (finalWriteRequests.length === 0) {
       writeVisibleSortTransferLedger_(
