@@ -414,6 +414,53 @@ function transferVisibleSortPlan_(
     });
 
     const finalWriteRequests = [];
+    const scoreColumn = CONFIG.scoreCol;
+    const scoreColumnOffset = scoreColumn - startColumn;
+    const writeDiagnostics = runs.map((run, runIndex) => {
+      const sourceRange = stageOutput.getRange(
+        run.destinationStartRow,
+        startColumn,
+        run.rowCount,
+        width
+      );
+      const destinationRange = sheet.getRange(
+        run.destinationStartRow,
+        startColumn,
+        run.rowCount,
+        width
+      );
+      const expectedScoreValues = stageOutput.getRange(
+        run.destinationStartRow,
+        scoreColumn,
+        run.rowCount,
+        1
+      ).getValues().map(row => row[0]);
+
+      const diagnostic = {
+        runIndex: runIndex,
+        requestIndexStart: runIndex * 2,
+        requestCount: 2,
+        sourceSheet: stageOutputName,
+        sourceSheetId: stageOutput.getSheetId(),
+        sourceRangeA1: sourceRange.getA1Notation(),
+        destinationSheet: sheet.getName(),
+        destinationSheetId: sheet.getSheetId(),
+        destinationRangeA1: destinationRange.getA1Notation(),
+        sourceStartRow: run.destinationStartRow,
+        destinationStartRow: run.destinationStartRow,
+        rowCount: run.rowCount,
+        scoreColumn: scoreColumn,
+        expectedScoreValues: expectedScoreValues
+      };
+
+      console.info('[VISIBLE SORT TRANSFER] destination run prepared', JSON.stringify({
+        operationId: operationId,
+        diagnosticVersion: 1,
+        run: diagnostic
+      }));
+      return diagnostic;
+    });
+
     runs.forEach(run => {
       finalWriteRequests.push.apply(
         finalWriteRequests,
@@ -498,6 +545,42 @@ function transferVisibleSortPlan_(
       rows: moves.length,
       runs: runs.length,
       copyPasteRequests: finalWriteRequests.length
+    });
+
+    // Read back the score column per exact destination run immediately after
+    // the batch. This diagnostic is independent of the full C:L verifier and
+    // helps identify which CopyPaste ranges did not land as staged.
+    writeDiagnostics.forEach(diagnostic => {
+      const actualScoreValues = sheet.getRange(
+        diagnostic.destinationStartRow,
+        scoreColumn,
+        diagnostic.rowCount,
+        1
+      ).getValues().map(row => row[0]);
+      const scoreMismatches = [];
+      for (let index = 0; index < diagnostic.rowCount; index++) {
+        if (JSON.stringify(diagnostic.expectedScoreValues[index]) !==
+            JSON.stringify(actualScoreValues[index])) {
+          scoreMismatches.push({
+            row: diagnostic.destinationStartRow + index,
+            expected: diagnostic.expectedScoreValues[index],
+            actual: actualScoreValues[index]
+          });
+        }
+      }
+      console.info('[VISIBLE SORT TRANSFER] destination run readback', JSON.stringify({
+        operationId: operationId,
+        diagnosticVersion: 1,
+        runIndex: diagnostic.runIndex,
+        sourceSheet: diagnostic.sourceSheet,
+        sourceRangeA1: diagnostic.sourceRangeA1,
+        destinationSheet: diagnostic.destinationSheet,
+        destinationRangeA1: diagnostic.destinationRangeA1,
+        rowCount: diagnostic.rowCount,
+        expectedScoreValues: diagnostic.expectedScoreValues,
+        actualScoreValues: actualScoreValues,
+        scoreMismatches: scoreMismatches
+      }));
     });
 
     const verificationStarted = Date.now();
