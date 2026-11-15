@@ -428,89 +428,25 @@ function transferVisibleSortPlan_(
       rows: rowCount
     });
 
+    // Build one atomic batch for all contiguous source/destination runs.
+    // Per-run SpreadsheetApp readbacks were removed: the output staging
+    // snapshot above and the full post-write C:L snapshot below already
+    // provide the required fidelity checks.
     const finalWriteRequests = [];
-    const scoreColumn = CONFIG.scoreCol;
-    const writeDiagnostics = runs.map((run, runIndex) => {
-      // Each run maps a contiguous source interval in SRC to a destination
-      // interval in OUT. The final write then copies that OUT interval to the
-      // same physical rows in the target sheet.
-      const sourceStageRange = stageSource.getRange(
-        run.sourceStartRow,
-        startColumn,
-        run.rowCount,
-        width
+    runs.forEach(run => {
+      finalWriteRequests.push.apply(
+        finalWriteRequests,
+        buildVisibleSortCopyPasteRequests_(
+          stageOutput.getSheetId(),
+          run.destinationStartRow,
+          sheet.getSheetId(),
+          run.destinationStartRow,
+          run.rowCount,
+          startColumn,
+          width,
+          ['PASTE_NORMAL', 'PASTE_DATA_VALIDATION']
+        )
       );
-      const outputStageRange = stageOutput.getRange(
-        run.destinationStartRow,
-        startColumn,
-        run.rowCount,
-        width
-      );
-      const destinationRange = sheet.getRange(
-        run.destinationStartRow,
-        startColumn,
-        run.rowCount,
-        width
-      );
-      const sourceStageScoreValues = stageSource.getRange(
-        run.sourceStartRow,
-        scoreColumn,
-        run.rowCount,
-        1
-      ).getValues().map(row => row[0]);
-      const outputStageScoreValues = stageOutput.getRange(
-        run.destinationStartRow,
-        scoreColumn,
-        run.rowCount,
-        1
-      ).getValues().map(row => row[0]);
-      const runRequests = buildVisibleSortCopyPasteRequests_(
-        stageOutput.getSheetId(),
-        run.destinationStartRow,
-        sheet.getSheetId(),
-        run.destinationStartRow,
-        run.rowCount,
-        startColumn,
-        width,
-        ['PASTE_NORMAL', 'PASTE_DATA_VALIDATION']
-      );
-      const requestIndexStart = finalWriteRequests.length;
-      finalWriteRequests.push.apply(finalWriteRequests, runRequests);
-
-      const diagnostic = {
-        runIndex: runIndex,
-        requestIndexStart: requestIndexStart,
-        requestCount: runRequests.length,
-        sourceStageSheet: stageSourceName,
-        sourceStageSheetId: stageSource.getSheetId(),
-        sourceStageStartRow: run.sourceStartRow,
-        sourceStageRangeA1: sourceStageRange.getA1Notation(),
-        sourceStageScoreValues: sourceStageScoreValues,
-        outputStageSheet: stageOutputName,
-        outputStageSheetId: stageOutput.getSheetId(),
-        outputStageStartRow: run.destinationStartRow,
-        outputStageRangeA1: outputStageRange.getA1Notation(),
-        outputStageScoreValues: outputStageScoreValues,
-        destinationSheet: sheet.getName(),
-        destinationSheetId: sheet.getSheetId(),
-        destinationStartRow: run.destinationStartRow,
-        destinationRangeA1: destinationRange.getA1Notation(),
-        rowCount: run.rowCount,
-        scoreColumn: scoreColumn,
-        copyPasteRequests: runRequests.map((request, requestOffset) => ({
-          batchRequestIndex: requestIndexStart + requestOffset,
-          pasteType: request.copyPaste.pasteType,
-          source: request.copyPaste.source,
-          destination: request.copyPaste.destination
-        }))
-      };
-
-      console.info('[VISIBLE SORT TRANSFER] destination run prepared', JSON.stringify({
-        operationId: operationId,
-        diagnosticVersion: 2,
-        run: diagnostic
-      }));
-      return diagnostic;
     });
     if (finalWriteRequests.length === 0) {
       writeVisibleSortTransferLedger_(
@@ -583,41 +519,8 @@ function transferVisibleSortPlan_(
       copyPasteRequests: finalWriteRequests.length
     });
 
-    // Read back the score column per exact destination run immediately after
-    // the batch. This diagnostic is independent of the full C:L verifier and
-    // helps identify which CopyPaste ranges did not land as staged.
-    writeDiagnostics.forEach(diagnostic => {
-      const actualScoreValues = sheet.getRange(
-        diagnostic.destinationStartRow,
-        scoreColumn,
-        diagnostic.rowCount,
-        1
-      ).getValues().map(row => row[0]);
-      const scoreMismatches = [];
-      for (let index = 0; index < diagnostic.rowCount; index++) {
-        if (JSON.stringify(diagnostic.outputStageScoreValues[index]) !==
-            JSON.stringify(actualScoreValues[index])) {
-          scoreMismatches.push({
-            row: diagnostic.destinationStartRow + index,
-            expected: diagnostic.outputStageScoreValues[index],
-            actual: actualScoreValues[index]
-          });
-        }
-      }
-      console.info('[VISIBLE SORT TRANSFER] destination run readback', JSON.stringify({
-        operationId: operationId,
-        diagnosticVersion: 1,
-        runIndex: diagnostic.runIndex,
-        sourceSheet: diagnostic.sourceSheet,
-        sourceRangeA1: diagnostic.sourceRangeA1,
-        destinationSheet: diagnostic.destinationSheet,
-        destinationRangeA1: diagnostic.destinationRangeA1,
-        rowCount: diagnostic.rowCount,
-        expectedScoreValues: diagnostic.expectedScoreValues,
-        actualScoreValues: actualScoreValues,
-        scoreMismatches: scoreMismatches
-      }));
-    });
+    // The full C:L snapshot below is the single authoritative post-write
+    // readback. Avoid N per-run calls that duplicate this verification.
 
     const verificationStarted = Date.now();
     let actualSnapshot;
