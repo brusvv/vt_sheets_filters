@@ -1053,3 +1053,75 @@ test('format fidelity other than G background remains enforced in column G', () 
   assert.equal(result.status, 'BLOCKED_STAGING');
   assert.equal(result.writeAttempted, false);
 });
+
+
+test('format differences in column H do not block transfer', () => {
+  const data = [
+    makeRow('A', 10, 'A', 'low'),
+    makeRow('A', 30, 'C', 'high'),
+    makeRow('A', 20, 'B', 'middle')
+  ];
+  const fixture = makeWorkbook(data, [true, true, true]);
+  fixture.target.setCell(3, 8, {
+    value: 'H content',
+    format: {
+      getBackgrounds: '#b9f2ff',
+      getFontColors: '#000000',
+      getFontFamilies: 'Blinker'
+    }
+  });
+  const built = makePlan(fixture, data, [true, true, true]);
+  const originalBatchUpdate = fixture.project.Sheets.Spreadsheets.batchUpdate;
+  fixture.project.Sheets.Spreadsheets.batchUpdate = function(resource, spreadsheetId) {
+    const result = originalBatchUpdate(resource, spreadsheetId);
+    (resource.requests || []).forEach(request => {
+      const copy = request.copyPaste;
+      if (copy && copy.destination.sheetId !== fixture.target.getSheetId()) {
+        const stage = fixture.sheets.get(copy.destination.sheetId);
+        if (stage) {
+          stage.getCell(3, 8).format.getBackgrounds = '#ffffff';
+          stage.getCell(3, 8).format.getFontColors = '#a739ca';
+          stage.getCell(3, 8).format.getFontFamilies = 'Arial';
+        }
+      }
+    });
+    return result;
+  };
+
+  const result = runTransfer(fixture, built);
+
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal(result.applied, true);
+  assert.equal(fixture.getCell(5, 8).value, 'H content');
+});
+
+test('column H content fidelity remains enforced when format checks are excluded', () => {
+  const data = [
+    makeRow('A', 10, 'A', 'low'),
+    makeRow('A', 30, 'C', 'high'),
+    makeRow('A', 20, 'B', 'middle')
+  ];
+  const fixture = makeWorkbook(data, [true, true, true]);
+  fixture.target.setCell(3, 8, {
+    value: 'original H content',
+    format: {getBackgrounds: '#b9f2ff'}
+  });
+  const built = makePlan(fixture, data, [true, true, true]);
+  const originalBatchUpdate = fixture.project.Sheets.Spreadsheets.batchUpdate;
+  fixture.project.Sheets.Spreadsheets.batchUpdate = function(resource, spreadsheetId) {
+    const result = originalBatchUpdate(resource, spreadsheetId);
+    (resource.requests || []).forEach(request => {
+      const copy = request.copyPaste;
+      if (copy && copy.destination.sheetId !== fixture.target.getSheetId()) {
+        const stage = fixture.sheets.get(copy.destination.sheetId);
+        if (stage) stage.getCell(3, 8).value = 'tampered H content';
+      }
+    });
+    return result;
+  };
+
+  const result = runTransfer(fixture, built);
+
+  assert.equal(result.status, 'BLOCKED_STAGING');
+  assert.equal(result.writeAttempted, false);
+});
