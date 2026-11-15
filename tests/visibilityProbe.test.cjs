@@ -35,8 +35,70 @@ test('field mask requests only sheet identity and row visibility metadata', () =
   const probe = loadProbe();
   assert.equal(
     probe.VISIBILITY_PROBE_FIELDS,
-    'sheets(properties(sheetId,title),data(startRow,startColumn,rowMetadata(hiddenByUser,hiddenByFilter)))'
+    'sheets(properties(sheetId),data(startRow,rowMetadata(hiddenByUser,hiddenByFilter)))'
   );
+});
+
+
+test('API diagnostics emits a compact response summary and preserves API errors', () => {
+  const logs = [];
+  const sheet = {
+    getName: () => 'Target',
+    getSheetId: () => 7,
+    getMaxRows: () => 100
+  };
+  const spreadsheet = {
+    getId: () => 'spreadsheet-id',
+    getActiveSheet: () => sheet
+  };
+  const probe = loadProbe({
+    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
+    Sheets: { Spreadsheets: { get() {
+      return gridResponse(7, [{
+        startRow: 2,
+        rowMetadata: [{ hiddenByUser: false, hiddenByFilter: true }]
+      }]);
+    } } },
+    Logger: { log(value) { logs.push(value); } }
+  });
+  probe.VISIBILITY_PROBE_CONFIG.ranges = [{ startRow: 3, numRows: 1 }];
+
+  const report = probe.runVisibilityProbeApiDiagnostics();
+  assert.equal(report.status, 'SUCCESS');
+  assert.equal(report.requestAttempted, true);
+  assert.equal(report.requestOk, true);
+  assert.equal(report.responseSummary.matchingSheetCount, 1);
+  assert.equal(report.responseSummary.sheets[0].gridData[0].firstMetadata.hiddenByUser, false);
+  assert.equal(report.responseSummary.sheets[0].gridData[0].firstMetadata.hiddenByFilter, true);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /^VISIBILITY_PROBE_API_DIAGNOSTICS /);
+  assert.ok(logs[0].length < 2000);
+});
+
+test('API diagnostics logs the actual Advanced Sheets service exception', () => {
+  const logs = [];
+  const sheet = {
+    getName: () => 'Target',
+    getSheetId: () => 7,
+    getMaxRows: () => 100
+  };
+  const spreadsheet = {
+    getId: () => 'spreadsheet-id',
+    getActiveSheet: () => sheet
+  };
+  const probe = loadProbe({
+    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
+    Sheets: { Spreadsheets: { get() { throw new Error('Sheets API is not enabled'); } } },
+    Logger: { log(value) { logs.push(value); } }
+  });
+  probe.VISIBILITY_PROBE_CONFIG.ranges = [{ startRow: 3, numRows: 1 }];
+
+  const report = probe.runVisibilityProbeApiDiagnostics();
+  assert.equal(report.status, 'ERROR');
+  assert.equal(report.requestAttempted, true);
+  assert.equal(report.requestOk, false);
+  assert.equal(report.errors[0].message, 'Sheets API is not enabled');
+  assert.match(logs[0], /Sheets API is not enabled/);
 });
 
 test('maps multiple GridData segments by sheetId and zero-based startRow, independent of response order', () => {
@@ -224,7 +286,7 @@ test('API request uses multiple A1 ranges and exact minimal field mask in one ca
   assert.equal(capturedId, 'spreadsheet-id');
   assert.deepEqual(Array.from(capturedOptions.ranges), ["'Target''s Sheet'!A1:A1", "'Target''s Sheet'!A10:A10"]);
   assert.equal(capturedOptions.fields, probe.VISIBILITY_PROBE_FIELDS);
-  assert.equal(capturedOptions.includeGridData, true);
+  assert.equal(Object.prototype.hasOwnProperty.call(capturedOptions, 'includeGridData'), false);
   assert.equal(result.status, 'SUCCESS');
   assert.equal(result.gridDataCount, 2);
   assert.equal(result.rowMetadataCount, 2);
