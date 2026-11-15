@@ -937,10 +937,29 @@ function findVisibleSortCellMismatch_(expected, actual, rowNumber, columnOffset)
     'format'
   ];
   for (const field of fields) {
-    // D is column offset 1 within C:L. Conditional formatting is evaluated
-    // in sheet context and is not migrated to staging sheets, so compare
-    // D's content but intentionally skip its format snapshot.
+    // D is column offset 1 within C:L. Its conditional-format appearance
+    // is context-dependent, so compare D's content but skip its cell format.
     if (field === 'format' && columnOffset === 1) continue;
+
+    // E is column offset 2 within C:L. Its background differs because of
+    // conditional formatting; ignore only the background while preserving
+    // checks for number format, fonts, alignment, wrapping and text style.
+    if (field === 'format' && columnOffset === 2) {
+      const expectedFormat = Object.assign({}, expected.format);
+      const actualFormat = Object.assign({}, actual.format);
+      delete expectedFormat.getBackgrounds;
+      delete actualFormat.getBackgrounds;
+      if (JSON.stringify(expectedFormat) !== JSON.stringify(actualFormat)) {
+        return {
+          row: rowNumber,
+          field: field,
+          expected: expectedFormat,
+          actual: actualFormat
+        };
+      }
+      continue;
+    }
+
     if (JSON.stringify(expected[field]) !== JSON.stringify(actual[field])) {
       return {
         row: rowNumber,
