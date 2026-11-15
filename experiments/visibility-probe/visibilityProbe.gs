@@ -83,13 +83,20 @@ function runVisibilityProbeApi129() {
   };
 
   try {
-    var target = visibilityProbeResolveTarget_();
-    if (target.sheet.getName() !== 'VisibilityTest') {
-      throw new Error(
-        'API-129 probe is restricted to the VisibilityTest sheet; actual sheet: ' +
-        target.sheet.getName()
-      );
+    // Resolve the fixture by name, not by the currently active tab.
+    // This prevents accidental runs against another sheet (for example Novice).
+    var spreadsheetId = String(VISIBILITY_PROBE_CONFIG.spreadsheetId || '').trim();
+    var spreadsheet = spreadsheetId
+      ? SpreadsheetApp.openById(spreadsheetId)
+      : SpreadsheetApp.getActiveSpreadsheet();
+    if (!spreadsheet) {
+      throw new Error('No active spreadsheet. Bind this project to the test spreadsheet or set spreadsheetId.');
     }
+    var fixtureSheet = spreadsheet.getSheetByName('VisibilityTest');
+    if (!fixtureSheet) {
+      throw new Error('Required fixture sheet was not found: VisibilityTest');
+    }
+    var target = { spreadsheet: spreadsheet, sheet: fixtureSheet };
 
     // Fixture layout: header in row 1, data in rows 2–130.
     var ranges = visibilityProbeValidateRanges_(
