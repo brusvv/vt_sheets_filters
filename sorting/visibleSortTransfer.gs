@@ -228,6 +228,7 @@ function transferVisibleSortPlan_(
       moves
     );
     const ledger = readVisibleSortTransferLedger_(ledgerProperties);
+    cleanupPreviousVisibleSortStages_(spreadsheet, ledgerProperties, ledger);
     const previous = ledger.find(entry => entry.id === operationId);
     if (previous && (
       previous.status === 'WRITE_ATTEMPTED' ||
@@ -269,6 +270,20 @@ function transferVisibleSortPlan_(
     stageOutput = spreadsheet.insertSheet(stageOutputName);
     ensureVisibleSortStageGrid_(stageOutput, lastRow, endColumn);
     stageOutput.hideSheet();
+
+    writeVisibleSortTransferLedger_(
+      ledgerProperties,
+      readVisibleSortTransferLedger_(ledgerProperties),
+      operationId,
+      'PREPARING',
+      sheet.getSheetId(),
+      {
+        stageSourceSheetName: stageSourceName,
+        stageSourceSheetId: stageSource.getSheetId(),
+        stageOutputSheetName: stageOutputName,
+        stageOutputSheetId: stageOutput.getSheetId()
+      }
+    );
 
     const stageCopyStarted = Date.now();
     Sheets.Spreadsheets.batchUpdate({
@@ -682,7 +697,9 @@ function transferVisibleSortPlan_(
       sheet.getSheetId(),
       {
         rows: moves.length,
+        stageSourceSheetName: stageSourceName,
         stageSourceSheetId: stageSource.getSheetId(),
+        stageOutputSheetName: stageOutputName,
         stageOutputSheetId: stageOutput.getSheetId()
       }
     );
@@ -879,6 +896,69 @@ function readVisibleSortTransferLedger_(properties) {
   } catch (error) {
     throw new Error('TRANSFER_LEDGER_CORRUPT');
   }
+}
+
+/**
+ * Removes only staging tabs belonging to previously verified or safely
+ * aborted operations. Unknown/failed post-write operations are preserved.
+ */
+function cleanupPreviousVisibleSortStages_(spreadsheet, properties, ledger) {
+  const eligibleStatuses = new Set(['COMPLETE', 'ABORTED_BEFORE_WRITE']);
+  const nextLedger = [];
+  const deleted = [];
+  const retained = [];
+
+  (ledger || []).forEach(entry => {
+    if (!eligibleStatuses.has(entry.status)) {
+      nextLedger.push(entry);
+      return;
+    }
+
+    const details = entry.details || {};
+    const stageRefs = [
+      { name: details.stageSourceSheetName, id: details.stageSourceSheetId },
+      { name: details.stageOutputSheetName, id: details.stageOutputSheetId }
+    ];
+    let cleanupComplete = true;
+
+    stageRefs.forEach(ref => {
+      if (!ref.name || !Number.isInteger(ref.id)) return;
+      const stage = spreadsheet.getSheetByName(ref.name);
+      if (!stage) return;
+      if (stage.getSheetId() !== ref.id) {
+        cleanupComplete = false;
+        retained.push({ name: ref.name, reason: 'SHEET_ID_MISMATCH' });
+        return;
+      }
+      try {
+        spreadsheet.deleteSheet(stage);
+        deleted.push(ref.name);
+      } catch (error) {
+        cleanupComplete = false;
+        retained.push({
+          name: ref.name,
+          reason: visibleSortTransferErrorMessage_(error)
+        });
+      }
+    });
+
+    if (!cleanupComplete) nextLedger.push(entry);
+  });
+
+  if (properties && nextLedger.length !== (ledger || []).length) {
+    properties.setProperty(
+      VISIBLE_SORT_TRANSFER_LEDGER_KEY_,
+      JSON.stringify(nextLedger.slice(-VISIBLE_SORT_TRANSFER_LEDGER_LIMIT_))
+    );
+  }
+
+  if (deleted.length || retained.length) {
+    console.info('[VISIBLE SORT TRANSFER] previous staging cleanup', JSON.stringify({
+      deleted: deleted,
+      retained: retained
+    }));
+  }
+  return { deleted: deleted, retained: retained };
 }
 
 function writeVisibleSortTransferLedger_(
