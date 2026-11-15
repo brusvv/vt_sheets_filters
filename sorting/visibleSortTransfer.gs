@@ -331,17 +331,20 @@ function transferVisibleSortPlan_(
     for (const move of moves) {
       const expectedSource = sourceStageSnapshot.cells[move.sourceRow - firstRow];
       const actualDestination = outputSnapshot.cells[move.destinationRow - firstRow];
-      const mismatch = findVisibleSortCellMismatch_(
-        expectedSource,
-        actualDestination,
-        move.destinationRow,
-        1
-      );
-      if (mismatch) {
-        throw new Error(
-          'STAGING_OUTPUT_FIDELITY_MISMATCH: ' +
-          JSON.stringify(Object.assign({ sourceRow: move.sourceRow }, mismatch))
+      for (let columnOffset = 0; columnOffset < width; columnOffset++) {
+        const mismatch = findVisibleSortCellMismatch_(
+          expectedSource[columnOffset],
+          actualDestination[columnOffset],
+          move.destinationRow,
+          columnOffset
         );
+        if (mismatch) {
+          mismatch.columnOffset = columnOffset;
+          throw new Error(
+            'STAGING_OUTPUT_FIDELITY_MISMATCH: ' +
+            JSON.stringify(Object.assign({ sourceRow: move.sourceRow }, mismatch))
+          );
+        }
       }
     }
     sortPerfStep_(perfTrace, 'Visible transfer: Prepare destination staging', prepareOutputStarted, {
