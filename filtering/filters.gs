@@ -289,17 +289,11 @@ function applyFilters(
     // 5. Подготовка FilterState и ManualState
     // --------------------------------------------------
 
-    const reusableSortStateContext =
-      !sortChanged && sortVisibilityContext && sortVisibilityContext.ok
-        ? sortVisibilityContext
-        : null;
-
     const filterState = prepareFilterState_(
       sheet,
       numRows,
       knownFilterState,
-      perfTrace,
-      reusableSortStateContext
+      perfTrace
     );
 
     // --------------------------------------------------
@@ -399,9 +393,9 @@ function applyFilters(
 
       previousFilterVisibility = Array(numRows).fill(true);
 
-    } else if (filterState.hasKnownPreviousVisibility) {
+    } else if (filterState.hasKnownFilterState) {
       previousFilterVisibility =
-        filterState.previousVisibility.slice(0, numRows);
+        knownFilterState.previousVisibility.slice(0, numRows);
 
     } else {
       previousFilterVisibility = getPreviousVisibility(
@@ -419,7 +413,7 @@ function applyFilters(
       stepStarted,
       {
         resetVisibility: resetVisibility,
-        reused: filterState.hasKnownPreviousVisibility
+        reused: filterState.hasKnownFilterState
       }
     );
 
@@ -546,16 +540,8 @@ function prepareFilterState_(
   sheet,
   numRows,
   knownFilterState,
-  perfTrace,
-  knownSortStateContext = null
+  perfTrace
 ) {
-  const hasKnownSortState = Boolean(
-    knownSortStateContext &&
-    knownSortStateContext.ok === true &&
-    Array.isArray(knownSortStateContext.filterVisibility) &&
-    knownSortStateContext.filterVisibility.length >= numRows
-  );
-
   const hasKnownFilterState = Boolean(
     knownFilterState &&
     knownFilterState.stateSheet &&
@@ -657,10 +643,6 @@ function prepareFilterState_(
 
   return {
     hasKnownFilterState: hasKnownFilterState,
-    hasKnownPreviousVisibility: hasKnownFilterState || hasKnownSortState,
-    previousVisibility: hasKnownFilterState
-      ? knownFilterState.previousVisibility.slice()
-      : (hasKnownSortState ? knownSortStateContext.filterVisibility.slice() : null),
     filterStateSheet: filterStateSheet,
     filterStateColumns: filterStateColumns,
     manualStateColumns: manualStateColumns,
