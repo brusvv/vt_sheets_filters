@@ -1,4 +1,4 @@
-# Visibility Probe v1.4.0
+# Visibility Probe v1.5.0
 
 Standalone diagnostic tool for comparing physical row visibility from Apps Script and the Advanced Google Sheets API. This experiment is isolated from production code and must be run only in a disposable spreadsheet / separate Apps Script project.
 
@@ -79,6 +79,19 @@ probe report.
 
 Run this function first if the API request is failing or returns zero GridData.
 Copy the single diagnostic line from the execution log.
+
+### `runVisibilityProbeApi129()`
+
+Runs one API-only request for the fixed disposable-fixture range `'VisibilityTest'!A2:A130` (129 physical rows: header in row 1, data in rows 2–130). It does not call `isRowHiddenByUser()` or `isRowHiddenByFilter()`, and therefore avoids the per-row Apps Script cost that caused the full 129-row paired benchmark to exceed the execution limit.
+
+The function is intentionally restricted to a sheet named `VisibilityTest`. It reports:
+
+- requested range, actual mapped row count and returned `rowMetadata` count;
+- number of rows with `hiddenByUser = true` and `hiddenByFilter = true`;
+- number of rows where both flags resolve to false (including omitted protobuf default-false fields);
+- one API request's elapsed time, parsing time, response JSON size and overall elapsed time.
+
+A `SUCCESS` result requires exactly 129 mapped rows and 129 returned row-metadata entries, with both visibility flags resolved for every row. This is an API throughput/completeness diagnostic, not an Apps Script equivalence test. Compare its flag values with a separately prepared known scenario or the earlier paired 20-row tests.
 
 ### `runVisibilityProbe()`
 
