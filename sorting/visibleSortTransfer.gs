@@ -978,6 +978,24 @@ function findVisibleSortCellMismatch_(expected, actual, rowNumber, columnOffset)
       continue;
     }
 
+    // G is column offset 4 within C:L. Its conditional-format background
+    // differs on temporary sheets; ignore only the background.
+    if (field === 'format' && columnOffset === 4) {
+      const expectedFormat = Object.assign({}, expected.format);
+      const actualFormat = Object.assign({}, actual.format);
+      delete expectedFormat.getBackgrounds;
+      delete actualFormat.getBackgrounds;
+      if (JSON.stringify(expectedFormat) !== JSON.stringify(actualFormat)) {
+        return {
+          row: rowNumber,
+          field: field,
+          expected: expectedFormat,
+          actual: actualFormat
+        };
+      }
+      continue;
+    }
+
     if (JSON.stringify(expected[field]) !== JSON.stringify(actual[field])) {
       return {
         row: rowNumber,
