@@ -56,6 +56,7 @@ function transferVisibleSortPlan_(
   let operationId = null;
   let writeAttempted = false;
   let ledgerProperties = null;
+  let originalActiveSheet = null;
 
   function finish(status, applied, reason, extra = {}) {
     const result = Object.assign({
@@ -187,6 +188,9 @@ function transferVisibleSortPlan_(
     if (!spreadsheet || typeof spreadsheet.getId !== 'function') {
       return finish('TRANSFER_NOT_VERIFIED', false, 'SPREADSHEET_ID_UNAVAILABLE');
     }
+    originalActiveSheet = typeof spreadsheet.getActiveSheet === 'function'
+      ? spreadsheet.getActiveSheet()
+      : null;
     const spreadsheetId = spreadsheet.getId();
     if (!spreadsheetId) {
       return finish('TRANSFER_NOT_VERIFIED', false, 'SPREADSHEET_ID_UNAVAILABLE');
@@ -637,6 +641,19 @@ function transferVisibleSortPlan_(
       ].filter(Boolean),
       message: message
     });
+  } finally {
+    // insertSheet()/hideSheet() can change the active tab even when the
+    // transfer aborts before writing. Restore the user's original tab.
+    if (spreadsheet && originalActiveSheet &&
+        typeof spreadsheet.setActiveSheet === 'function') {
+      try {
+        spreadsheet.setActiveSheet(originalActiveSheet);
+      } catch (restoreError) {
+        console.warn('[VISIBLE SORT TRANSFER] active sheet restore failed', JSON.stringify({
+          message: visibleSortTransferErrorMessage_(restoreError)
+        }));
+      }
+    }
   }
 }
 
@@ -878,9 +895,20 @@ function describeVisibleSortTextStyle_(style) {
 
 function describeVisibleSortRichText_(value) {
   if (!value) return null;
+
+  const text = value.getText();
+  // Empty cells have no rich-text payload to preserve. Apps Script can expose
+  // an inherited/default run style here (including a theme-dependent font
+  // color) even though cell formatting is already captured independently by
+  // getFontColors()/getTextStyles(). Comparing that synthetic style causes
+  // false staging mismatches for otherwise identical blank cells.
+  if (text === '') {
+    return { text: '', linkUrl: null, runs: [] };
+  }
+
   const runs = typeof value.getRuns === 'function' ? value.getRuns() : [];
   return {
-    text: value.getText(),
+    text: text,
     linkUrl: typeof value.getLinkUrl === 'function' ? value.getLinkUrl() : null,
     runs: runs.map(run => ({
       text: run.getText(),
