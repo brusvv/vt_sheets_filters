@@ -334,7 +334,8 @@ function transferVisibleSortPlan_(
       const mismatch = findVisibleSortCellMismatch_(
         expectedSource,
         actualDestination,
-        move.destinationRow
+        move.destinationRow,
+        1
       );
       if (mismatch) {
         throw new Error(
@@ -920,7 +921,7 @@ function describeVisibleSortRichText_(value) {
   };
 }
 
-function findVisibleSortCellMismatch_(expected, actual, rowNumber) {
+function findVisibleSortCellMismatch_(expected, actual, rowNumber, columnOffset) {
   if (!expected || !actual) {
     return { row: rowNumber, reason: 'CELL_SNAPSHOT_MISSING' };
   }
@@ -933,6 +934,10 @@ function findVisibleSortCellMismatch_(expected, actual, rowNumber) {
     'format'
   ];
   for (const field of fields) {
+    // D is column offset 1 within C:L. Conditional formatting is evaluated
+    // in sheet context and is not migrated to staging sheets, so compare
+    // D's content but intentionally skip its format snapshot.
+    if (field === 'format' && columnOffset === 1) continue;
     if (JSON.stringify(expected[field]) !== JSON.stringify(actual[field])) {
       return {
         row: rowNumber,
@@ -967,7 +972,8 @@ function findVisibleSortSnapshotMismatch_(expected, actual, firstRow) {
       const mismatch = findVisibleSortCellMismatch_(
         expected.cells[rowIndex][columnIndex],
         actual.cells[rowIndex][columnIndex],
-        firstRow + rowIndex
+        firstRow + rowIndex,
+        columnIndex
       );
       if (mismatch) {
         mismatch.columnOffset = columnIndex;
