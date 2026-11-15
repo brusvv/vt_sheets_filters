@@ -97,6 +97,21 @@ function makeRange(sheet, row, column, numRows, numColumns) {
     ))
   );
   const range = {
+    getA1Notation: () => {
+      const columnName = number => {
+        let value = number;
+        let result = '';
+        while (value > 0) {
+          const remainder = (value - 1) % 26;
+          result = String.fromCharCode(65 + remainder) + result;
+          value = Math.floor((value - 1) / 26);
+        }
+        return result;
+      };
+      const start = columnName(column) + row;
+      const end = columnName(column + numColumns - 1) + (row + numRows - 1);
+      return start === end ? start : start + ':' + end;
+    },
     getValues: () => matrix(cell => cell.value),
     getFormulasR1C1: () => matrix(cell => cell.formulaR1C1),
     getNotes: () => matrix(cell => cell.note),
