@@ -47,7 +47,6 @@ var VISIBILITY_PROBE_VERSION = '1.3.0';
 var VISIBILITY_PROBE_FIELDS =
   'sheets(properties(sheetId),data(startRow,rowMetadata(hiddenByUser,hiddenByFilter)))';
 
-/** Main one-shot comparison. Logs and returns one JSON report. */
 /**
  * Small API-only diagnostic. Run this before the full probe when the Sheets API
  * request fails or returns no GridData. Its single log line stays compact and
@@ -115,6 +114,7 @@ function visibilityProbeLogDiagnostic_(report) {
   return report;
 }
 
+/** Main one-shot comparison. Logs and returns one JSON report. */
 function runVisibilityProbe() {
   var runStarted = Date.now();
   var report = visibilityProbeCreateBaseReport_('SINGLE_RUN');
