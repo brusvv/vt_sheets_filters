@@ -261,16 +261,22 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = n
     const filterColumns = getFilterStateColumns(sheet);
     const manualColumns = getManualStateColumns(sheet);
 
-    const filterMetadataStarted = perfTrace ? Date.now() : 0;
-    const filterMetadata = stateSheet.getRange(
-      1,
-      filterColumns.visibleCol,
-      2,
-      2
-    ).getValues();
-    if (perfTrace) sortPerfStep_(perfTrace, 'Resolver: Read FilterState metadata', filterMetadataStarted, {
+    const stateMetadataStarted = perfTrace ? Date.now() : 0;
+    const stateMetadataValues = stateSheet.getRange('A1:Q2').getValues();
+    const getMetadataBlock = startCol => [
+      [
+        stateMetadataValues[0][startCol - 1],
+        stateMetadataValues[0][startCol]
+      ],
+      [
+        stateMetadataValues[1][startCol - 1],
+        stateMetadataValues[1][startCol]
+      ]
+    ];
+    const filterMetadata = getMetadataBlock(filterColumns.visibleCol);
+    if (perfTrace) sortPerfStep_(perfTrace, 'Resolver: Read state metadata A1:Q2', stateMetadataStarted, {
       rows: 2,
-      columns: 2
+      columns: 17
     });
 
     if (
@@ -296,17 +302,7 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = n
       rows: exactCount
     });
 
-    const manualMetadataStarted = perfTrace ? Date.now() : 0;
-    const manualMetadata = stateSheet.getRange(
-      1,
-      manualColumns.keyCol,
-      2,
-      2
-    ).getValues();
-    if (perfTrace) sortPerfStep_(perfTrace, 'Resolver: Read ManualState metadata', manualMetadataStarted, {
-      rows: 2,
-      columns: 2
-    });
+    const manualMetadata = getMetadataBlock(manualColumns.keyCol);
 
     if (
       manualMetadata[0][0] !== sheet.getName() + ' Manual' ||
@@ -366,6 +362,10 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = n
 
     context.sheetId = sheet.getSheetId();
     context.sheetName = sheet.getName();
+    context.stateSheet = stateSheet;
+    context.stateMetadataValues = stateMetadataValues.map(row => row.slice());
+    context.filterStateColumns = filterColumns;
+    context.manualStateColumns = manualColumns;
     context.filterMetadata = filterMetadata.map(row => row.slice());
     context.manualMetadata = manualMetadata.map(row => row.slice());
     context.savedLastRow = savedLastRow;
