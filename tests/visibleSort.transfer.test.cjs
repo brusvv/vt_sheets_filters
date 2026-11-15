@@ -279,6 +279,11 @@ function makeWorkbook(data, visible, options = {}) {
                 destinationCell.validation = clone(sourceCell.validation);
               } else if (copy.pasteType === 'PASTE_NORMAL') {
                 const copied = clone(sourceCell);
+                if (options.columnDStageFormatMismatch &&
+                    destinationSheet !== target && destinationColumn === 4) {
+                  copied.format.getBackgrounds = '#a739ca';
+                  copied.format.getFontColors = '#ffffff';
+                }
                 if (options.emptyRichTextStageColorMismatch &&
                     destinationSheet !== target && copied.richText &&
                     copied.richText.text === '') {
@@ -821,4 +826,64 @@ test('transfer restores the originally active sheet when staging aborts', () => 
 
   assert.equal(result.status, 'BLOCKED_STAGING');
   assert.equal(fixture.workbook.getActiveSheet().getName(), 'Intermediate');
+});
+
+test('conditional-format appearance differences in column D do not block transfer', () => {
+  const data = [
+    makeRow('A', 10, 'A', 'low'),
+    makeRow('A', 30, 'C', 'high'),
+    makeRow('A', 20, 'B', 'middle')
+  ];
+  const fixture = makeWorkbook(data, [true, true, true], {
+    columnDStageFormatMismatch: true
+  });
+  fixture.target.setCell(3, 4, {
+    value: 'conditional label',
+    note: 'keep this note',
+    format: {
+      getBackgrounds: '#2dc8c5',
+      getFontColors: '#000000'
+    }
+  });
+  const built = makePlan(fixture, data, [true, true, true]);
+
+  const result = runTransfer(fixture, built);
+
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal(result.applied, true);
+  assert.equal(fixture.getCell(5, 4).value, 'conditional label');
+  assert.equal(fixture.getCell(5, 4).note, 'keep this note');
+});
+
+test('format fidelity remains enforced in columns other than D', () => {
+  const fixture = makeWorkbook([
+    makeRow('A', 10, 'A', 'low'),
+    makeRow('A', 30, 'C', 'high'),
+    makeRow('A', 20, 'B', 'middle')
+  ], [true, true, true]);
+  fixture.target.setCell(3, 5, {
+    format: {getBackgrounds: '#2dc8c5'}
+  });
+  const built = makePlan(fixture, [
+    makeRow('A', 10, 'A', 'low'),
+    makeRow('A', 30, 'C', 'high'),
+    makeRow('A', 20, 'B', 'middle')
+  ], [true, true, true]);
+  const originalBatchUpdate = fixture.project.Sheets.Spreadsheets.batchUpdate;
+  fixture.project.Sheets.Spreadsheets.batchUpdate = function(resource, spreadsheetId) {
+    const result = originalBatchUpdate(resource, spreadsheetId);
+    (resource.requests || []).forEach(request => {
+      const copy = request.copyPaste;
+      if (copy && copy.destination.sheetId !== fixture.target.getSheetId()) {
+        const stage = fixture.sheets.get(copy.destination.sheetId);
+        if (stage) stage.getCell(3, 5).format.getBackgrounds = '#a739ca';
+      }
+    });
+    return result;
+  };
+
+  const result = runTransfer(fixture, built);
+
+  assert.equal(result.status, 'BLOCKED_STAGING');
+  assert.equal(result.writeAttempted, false);
 });
