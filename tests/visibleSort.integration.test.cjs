@@ -664,7 +664,7 @@ test('fresh validator rejects a different target sheet', () => {
   assert.equal(result.reason, 'VISIBILITY_CONTEXT_SHEET_MISMATCH');
 });
 
-test('AutoSort reuses Resolver FilterState visibility while retaining fresh metadata and ManualState reads', () => {
+test('AutoSort batches Resolver metadata reads while preserving independent state refresh', () => {
   const fixture = createMockWorkbook();
   fixture.stateSheet.reads.length = 0;
 
@@ -691,10 +691,10 @@ test('AutoSort reuses Resolver FilterState visibility while retaining fresh meta
     read.numColumns === columns
   ).length;
 
-  assert.equal(countReads(1, 1, 2, 17), 2, 'Resolver and filter preparation should each read fresh A1:Q2 metadata once');
+  assert.equal(countReads(1, 1, 2, 17), 2, 'Resolver and filter preparation should each read metadata once');
   assert.equal(countReads(3, 13, 1, 1), 2, 'Resolver and filter preparation should independently read ManualState keys');
-  assert.equal(countReads(3, 4, 3, 1), 1, 'FilterState visibility should be read only by the Resolver');
-  assert.equal(previousVisibilityReads, 0, 'previous visibility should come from the Resolver snapshot');
+  assert.equal(countReads(3, 4, 3, 1), 2, 'Resolver and previous-visibility validation should independently read FilterState visibility');
+  assert.equal(previousVisibilityReads, 1, 'previous visibility should retain its independent validation path');
   assert.equal(fixture.project.FILTER_STATE_LAYOUT_CACHE, fixture.stateSheet);
 });
 
