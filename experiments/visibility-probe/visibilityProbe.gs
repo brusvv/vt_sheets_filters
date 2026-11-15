@@ -41,11 +41,80 @@ var VISIBILITY_PROBE_CONFIG = {
   }
 };
 
-var VISIBILITY_PROBE_VERSION = '1.2.0';
+var VISIBILITY_PROBE_VERSION = '1.3.0';
+// Keep the field mask minimal and request only the row metadata needed by the probe.
+// A fields mask already enables GridData in spreadsheets.get; includeGridData is redundant.
 var VISIBILITY_PROBE_FIELDS =
-  'sheets(properties(sheetId,title),data(startRow,startColumn,rowMetadata(hiddenByUser,hiddenByFilter)))';
+  'sheets(properties(sheetId),data(startRow,rowMetadata(hiddenByUser,hiddenByFilter)))';
 
 /** Main one-shot comparison. Logs and returns one JSON report. */
+/**
+ * Small API-only diagnostic. Run this before the full probe when the Sheets API
+ * request fails or returns no GridData. Its single log line stays compact and
+ * exposes the actual API exception or the returned GridData structure.
+ */
+function runVisibilityProbeApiDiagnostics() {
+  var report = {
+    probeVersion: VISIBILITY_PROBE_VERSION,
+    generatedAt: new Date().toISOString(),
+    mode: 'API_DIAGNOSTICS',
+    status: 'NOT_STARTED',
+    spreadsheetId: null,
+    sheetId: null,
+    sheetName: null,
+    requestedRanges: [],
+    requestAttempted: false,
+    requestOk: false,
+    requestMs: null,
+    apiStatus: 'NOT_STARTED',
+    gridDataCount: 0,
+    rowMetadataCount: 0,
+    responseSummary: null,
+    errors: []
+  };
+
+  try {
+    var target = visibilityProbeResolveTarget_();
+    var ranges = visibilityProbeValidateRanges_(
+      VISIBILITY_PROBE_CONFIG.ranges,
+      target.sheet.getMaxRows()
+    );
+    report.spreadsheetId = target.spreadsheet.getId();
+    report.sheetId = target.sheet.getSheetId();
+    report.sheetName = target.sheet.getName();
+    report.requestedRanges = visibilityProbeBuildA1Ranges_(report.sheetName, ranges);
+
+    var apiRead = visibilityProbeReadSheetsApi_(
+      report.spreadsheetId,
+      target.sheet,
+      ranges
+    );
+    report.requestAttempted = apiRead.requestAttempted;
+    report.requestOk = apiRead.requestOk;
+    report.requestMs = apiRead.requestMs;
+    report.apiStatus = apiRead.status;
+    report.gridDataCount = apiRead.gridDataCount;
+    report.rowMetadataCount = apiRead.rowMetadataCount;
+    report.responseSummary = apiRead.responseSummary;
+    report.errors = apiRead.errors;
+    report.status = apiRead.status;
+  } catch (error) {
+    report.status = 'ERROR';
+    report.apiStatus = 'ERROR';
+    report.errors.push(visibilityProbeError_('API_DIAGNOSTICS', error));
+  }
+
+  return visibilityProbeLogDiagnostic_(report);
+}
+
+function visibilityProbeLogDiagnostic_(report) {
+  var json = JSON.stringify(report);
+  if (typeof Logger !== 'undefined' && Logger.log) {
+    Logger.log('VISIBILITY_PROBE_API_DIAGNOSTICS ' + json);
+  }
+  return report;
+}
+
 function runVisibilityProbe() {
   var runStarted = Date.now();
   var report = visibilityProbeCreateBaseReport_('SINGLE_RUN');
@@ -435,6 +504,7 @@ function visibilityProbeEmptySheetsApiRead_() {
     requestMs: null,
     parseMs: null,
     responseJsonUtf8Bytes: null,
+    responseSummary: null,
     gridDataCount: 0,
     rowMetadataCount: 0
   };
@@ -628,6 +698,7 @@ function visibilityProbeReadSheetsApi_(spreadsheetId, sheet, ranges) {
     requestMs: null,
     parseMs: null,
     responseJsonUtf8Bytes: null,
+    responseSummary: null,
     gridDataCount: 0,
     rowMetadataCount: 0,
     rowsByNumber: Object.create(null),
@@ -645,11 +716,14 @@ function visibilityProbeReadSheetsApi_(spreadsheetId, sheet, ranges) {
     result.requestAttempted = true;
     var response = Sheets.Spreadsheets.get(spreadsheetId, {
       ranges: a1Ranges,
-      includeGridData: true,
       fields: VISIBILITY_PROBE_FIELDS
     });
     result.requestMs = Date.now() - requestStarted;
     result.requestOk = true;
+    result.responseSummary = visibilityProbeSummarizeApiResponse_(
+      response,
+      sheet.getSheetId()
+    );
 
     var parseStarted = Date.now();
     var mapped = visibilityProbeMapGridData_(response, sheet.getSheetId(), ranges);
@@ -687,6 +761,67 @@ function visibilityProbeReadSheetsApi_(spreadsheetId, sheet, ranges) {
   }
 
   return result;
+}
+
+/** Returns only structural details; never includes cell values. */
+function visibilityProbeSummarizeApiResponse_(response, wantedSheetId) {
+  var summary = {
+    responseKeys: response && typeof response === 'object'
+      ? Object.keys(response)
+      : [],
+    sheetsIsArray: !!(response && Array.isArray(response.sheets)),
+    sheetsCount: response && Array.isArray(response.sheets)
+      ? response.sheets.length
+      : null,
+    matchingSheetCount: 0,
+    sheets: []
+  };
+
+  if (!response || !Array.isArray(response.sheets)) return summary;
+
+  summary.sheets = response.sheets.map(function(item) {
+    var properties = item && item.properties ? item.properties : null;
+    var data = item && Array.isArray(item.data) ? item.data : null;
+    var sheetId = properties && properties.sheetId !== undefined
+      ? Number(properties.sheetId)
+      : null;
+    if (sheetId === Number(wantedSheetId)) summary.matchingSheetCount++;
+
+    return {
+      sheetId: sheetId,
+      title: properties && properties.title ? properties.title : null,
+      dataIsArray: !!data,
+      dataCount: data ? data.length : null,
+      gridData: data ? data.map(function(grid) {
+        var metadata = grid && Array.isArray(grid.rowMetadata)
+          ? grid.rowMetadata
+          : null;
+        var first = metadata && metadata.length ? metadata[0] : null;
+        return {
+          startRow: grid && grid.startRow !== undefined ? grid.startRow : null,
+          startColumn: grid && grid.startColumn !== undefined ? grid.startColumn : null,
+          rowMetadataIsArray: !!metadata,
+          rowMetadataCount: metadata ? metadata.length : null,
+          firstMetadata: first ? {
+            hiddenByUser: typeof first.hiddenByUser === 'boolean'
+              ? first.hiddenByUser
+              : null,
+            hiddenByUserType: first.hiddenByUser === null
+              ? 'null'
+              : typeof first.hiddenByUser,
+            hiddenByFilter: typeof first.hiddenByFilter === 'boolean'
+              ? first.hiddenByFilter
+              : null,
+            hiddenByFilterType: first.hiddenByFilter === null
+              ? 'null'
+              : typeof first.hiddenByFilter
+          } : null
+        };
+      }) : []
+    };
+  });
+
+  return summary;
 }
 
 /** Maps GridData by sheetId and startRow, never by response array position. */
