@@ -855,20 +855,21 @@ test('conditional-format appearance differences in column D do not block transfe
   assert.equal(fixture.getCell(5, 4).note, 'keep this note');
 });
 
-test('format fidelity remains enforced in columns other than D', () => {
-  const fixture = makeWorkbook([
+test('conditional background differences in column E do not block transfer', () => {
+  const data = [
     makeRow('A', 10, 'A', 'low'),
     makeRow('A', 30, 'C', 'high'),
     makeRow('A', 20, 'B', 'middle')
-  ], [true, true, true]);
+  ];
+  const fixture = makeWorkbook(data, [true, true, true]);
   fixture.target.setCell(3, 5, {
-    format: {getBackgrounds: '#2dc8c5'}
+    value: 10,
+    format: {
+      getBackgrounds: '#b1f1ef',
+      getFontColors: '#000000'
+    }
   });
-  const built = makePlan(fixture, [
-    makeRow('A', 10, 'A', 'low'),
-    makeRow('A', 30, 'C', 'high'),
-    makeRow('A', 20, 'B', 'middle')
-  ], [true, true, true]);
+  const built = makePlan(fixture, data, [true, true, true]);
   const originalBatchUpdate = fixture.project.Sheets.Spreadsheets.batchUpdate;
   fixture.project.Sheets.Spreadsheets.batchUpdate = function(resource, spreadsheetId) {
     const result = originalBatchUpdate(resource, spreadsheetId);
@@ -876,7 +877,40 @@ test('format fidelity remains enforced in columns other than D', () => {
       const copy = request.copyPaste;
       if (copy && copy.destination.sheetId !== fixture.target.getSheetId()) {
         const stage = fixture.sheets.get(copy.destination.sheetId);
-        if (stage) stage.getCell(3, 5).format.getBackgrounds = '#a739ca';
+        if (stage) stage.getCell(3, 5).format.getBackgrounds = '#e7baf6';
+      }
+    });
+    return result;
+  };
+
+  const result = runTransfer(fixture, built);
+
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal(result.applied, true);
+});
+
+test('format fidelity other than E background remains enforced in column E', () => {
+  const data = [
+    makeRow('A', 10, 'A', 'low'),
+    makeRow('A', 30, 'C', 'high'),
+    makeRow('A', 20, 'B', 'middle')
+  ];
+  const fixture = makeWorkbook(data, [true, true, true]);
+  fixture.target.setCell(3, 5, {
+    format: {
+      getBackgrounds: '#b1f1ef',
+      getFontColors: '#000000'
+    }
+  });
+  const built = makePlan(fixture, data, [true, true, true]);
+  const originalBatchUpdate = fixture.project.Sheets.Spreadsheets.batchUpdate;
+  fixture.project.Sheets.Spreadsheets.batchUpdate = function(resource, spreadsheetId) {
+    const result = originalBatchUpdate(resource, spreadsheetId);
+    (resource.requests || []).forEach(request => {
+      const copy = request.copyPaste;
+      if (copy && copy.destination.sheetId !== fixture.target.getSheetId()) {
+        const stage = fixture.sheets.get(copy.destination.sheetId);
+        if (stage) stage.getCell(3, 5).format.getFontColors = '#a739ca';
       }
     });
     return result;
