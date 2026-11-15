@@ -200,6 +200,95 @@ function buildSortVisibilityContextFromSnapshots_(args, perfTrace = null) {
   return context;
 }
 
+/**
+ * Reads physical row visibility in one Advanced Sheets API request.
+ *
+ * Sheets API omits default false Boolean properties. A present rowMetadata
+ * object with an omitted flag is therefore interpreted as false. Missing
+ * metadata objects, missing rows, duplicate mappings, and invalid field types
+ * are rejected; callers must fail closed.
+ */
+function readSortPhysicalVisibilityFromSheetsApi_(sheet, firstRow, rowCount) {
+  if (!sheet || !Number.isInteger(firstRow) || firstRow < 1 ||
+      !Number.isInteger(rowCount) || rowCount < 1) {
+    throw new Error('Invalid physical visibility API range.');
+  }
+  if (typeof Sheets === 'undefined' || !Sheets.Spreadsheets ||
+      typeof Sheets.Spreadsheets.get !== 'function') {
+    throw new Error('Advanced Sheets Service is unavailable.');
+  }
+
+  const spreadsheet = sheet.getParent();
+  if (!spreadsheet || typeof spreadsheet.getId !== 'function') {
+    throw new Error('Spreadsheet identity is unavailable for Sheets API read.');
+  }
+
+  const sheetName = String(sheet.getName());
+  const quotedSheetName = "'" + sheetName.replace(/'/g, "''") + "'";
+  const a1Range = quotedSheetName + '!A' + firstRow + ':A' + (firstRow + rowCount - 1);
+  const started = Date.now();
+  const response = Sheets.Spreadsheets.get(spreadsheet.getId(), {
+    ranges: [a1Range],
+    fields: 'sheets(properties(sheetId),data(startRow,rowMetadata(hiddenByUser,hiddenByFilter)))'
+  });
+  const requestMs = Date.now() - started;
+
+  if (!response || !Array.isArray(response.sheets)) {
+    throw new Error('Sheets API response has no sheets array.');
+  }
+  const matchingSheets = response.sheets.filter(item =>
+    item && item.properties &&
+    Number(item.properties.sheetId) === Number(sheet.getSheetId())
+  );
+  if (matchingSheets.length !== 1) {
+    throw new Error('Sheets API response does not contain exactly one matching sheetId.');
+  }
+
+  const gridData = matchingSheets[0].data;
+  if (!Array.isArray(gridData) || gridData.length !== 1) {
+    throw new Error('Sheets API response does not contain exactly one GridData block.');
+  }
+  const block = gridData[0];
+  if (!block || !Number.isInteger(block.startRow) ||
+      block.startRow !== firstRow - 1 ||
+      !Array.isArray(block.rowMetadata) ||
+      block.rowMetadata.length !== rowCount) {
+    throw new Error('Sheets API rowMetadata is missing, incomplete, or misaligned.');
+  }
+
+  const physicalHiddenByUser = [];
+  const physicalHiddenByFilter = [];
+  for (let index = 0; index < rowCount; index++) {
+    const metadata = block.rowMetadata[index];
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      throw new Error('Invalid rowMetadata object at row ' + (firstRow + index) + '.');
+    }
+    ['hiddenByUser', 'hiddenByFilter'].forEach(field => {
+      if (Object.prototype.hasOwnProperty.call(metadata, field) &&
+          typeof metadata[field] !== 'boolean') {
+        throw new Error('Invalid ' + field + ' type at row ' + (firstRow + index) + '.');
+      }
+    });
+    physicalHiddenByUser.push(
+      Object.prototype.hasOwnProperty.call(metadata, 'hiddenByUser')
+        ? metadata.hiddenByUser : false
+    );
+    physicalHiddenByFilter.push(
+      Object.prototype.hasOwnProperty.call(metadata, 'hiddenByFilter')
+        ? metadata.hiddenByFilter : false
+    );
+  }
+
+  return {
+    physicalHiddenByUser: physicalHiddenByUser,
+    physicalHiddenByFilter: physicalHiddenByFilter,
+    requestMs: requestMs,
+    rowsRead: rowCount,
+    requestCount: 1,
+    range: a1Range
+  };
+}
+
 function sortManualCountsEqual_(left, right) {
   if (!(left instanceof Map) || !(right instanceof Map)) return false;
   if (left.size !== right.size) return false;
@@ -330,22 +419,46 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = n
     });
 
     const physicalVisibilityStarted = perfTrace ? Date.now() : 0;
-    const physicalHiddenByUser = [];
-    const physicalHiddenByFilter = [];
+    let physicalHiddenByUser;
+    let physicalHiddenByFilter;
+    let physicalVisibilityMetrics;
 
-    for (let offset = 0; offset < exactCount; offset++) {
-      const row = CONFIG.firstRow + offset;
-      physicalHiddenByUser.push(sheet.isRowHiddenByUser(row));
-      physicalHiddenByFilter.push(sheet.isRowHiddenByFilter(row));
+    if (CONFIG.resolverBatchVisibilityEnabled === true) {
+      const apiVisibility = readSortPhysicalVisibilityFromSheetsApi_(
+        sheet,
+        CONFIG.firstRow,
+        exactCount
+      );
+      physicalHiddenByUser = apiVisibility.physicalHiddenByUser;
+      physicalHiddenByFilter = apiVisibility.physicalHiddenByFilter;
+      physicalVisibilityMetrics = {
+        source: 'SHEETS_API_ROW_METADATA',
+        rowsChecked: exactCount,
+        sheetsApiRequests: apiVisibility.requestCount,
+        sheetsApiRequestMs: apiVisibility.requestMs,
+        isRowHiddenByUserCalls: 0,
+        isRowHiddenByFilterCalls: 0
+      };
+    } else {
+      physicalHiddenByUser = [];
+      physicalHiddenByFilter = [];
+      for (let offset = 0; offset < exactCount; offset++) {
+        const row = CONFIG.firstRow + offset;
+        physicalHiddenByUser.push(sheet.isRowHiddenByUser(row));
+        physicalHiddenByFilter.push(sheet.isRowHiddenByFilter(row));
+      }
+      physicalVisibilityMetrics = {
+        source: 'APPS_SCRIPT_ROW_METHODS',
+        rowsChecked: exactCount,
+        sheetsApiRequests: 0,
+        isRowHiddenByUserCalls: exactCount,
+        isRowHiddenByFilterCalls: exactCount
+      };
     }
 
     if (perfTrace) {
-      sortPerfStep_(perfTrace, 'Resolver: Read physical visibility', physicalVisibilityStarted, {
-        rowsChecked: exactCount,
-        isRowHiddenByUserCalls: exactCount,
-        isRowHiddenByFilterCalls: exactCount,
-        spreadsheetApiCalls: exactCount * 2
-      });
+      sortPerfStep_(perfTrace, 'Resolver: Read physical visibility',
+        physicalVisibilityStarted, physicalVisibilityMetrics);
     }
 
     const context = buildSortVisibilityContextFromSnapshots_({
