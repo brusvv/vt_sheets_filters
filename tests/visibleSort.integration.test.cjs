@@ -128,6 +128,12 @@ function createMockWorkbook(options = {}) {
       this.owner = owner;
     }
     getValues() {
+      this.owner.reads.push({
+        startRow: this.startRow,
+        startColumn: this.startColumn,
+        numRows: this.numRows,
+        numColumns: this.numColumns
+      });
       const result = [];
       for (let r = 0; r < this.numRows; r++) {
         const row = [];
@@ -212,6 +218,7 @@ function createMockWorkbook(options = {}) {
       this.id = id;
       this.grid = grid;
       this.parent = parent;
+      this.reads = [];
       this.hiddenRows = new Set(options.hiddenRows || [4]);
       this.filterHiddenRows = new Set(options.filterHiddenRows || []);
       this.writes = [];
@@ -655,6 +662,40 @@ test('fresh validator rejects a different target sheet', () => {
 
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'VISIBILITY_CONTEXT_SHEET_MISMATCH');
+});
+
+test('AutoSort reuses the Resolver state snapshot without rereading metadata, ManualState keys, or FilterState visibility', () => {
+  const fixture = createMockWorkbook();
+  fixture.stateSheet.reads.length = 0;
+
+  let previousVisibilityReads = 0;
+  const originalGetPreviousVisibility = fixture.project.getPreviousVisibility;
+  fixture.project.getPreviousVisibility = function(...args) {
+    previousVisibilityReads++;
+    return originalGetPreviousVisibility.apply(this, args);
+  };
+
+  fixture.project.applyFilters(
+    false,
+    fixture.gameSheet,
+    false,
+    autoSortOptions(true),
+    null
+  );
+
+  const reads = fixture.stateSheet.reads;
+  const countReads = (row, column, rows, columns) => reads.filter(read =>
+    read.startRow === row &&
+    read.startColumn === column &&
+    read.numRows === rows &&
+    read.numColumns === columns
+  ).length;
+
+  assert.equal(countReads(1, 1, 2, 17), 1, 'A1:Q2 metadata should be read once');
+  assert.equal(countReads(3, 13, 1, 1), 1, 'ManualState keys should be read once');
+  assert.equal(countReads(3, 4, 3, 1), 1, 'FilterState visibility should be read once');
+  assert.equal(previousVisibilityReads, 0, 'previous visibility should come from the Resolver snapshot');
+  assert.equal(fixture.project.FILTER_STATE_LAYOUT_CACHE, fixture.stateSheet);
 });
 
 test('AutoSort integration: TRANSFER_NOT_VERIFIED is followed by filtering with resolved manual positions and no content/state loss', () => {
