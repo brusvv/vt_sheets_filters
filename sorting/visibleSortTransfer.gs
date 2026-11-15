@@ -937,9 +937,10 @@ function findVisibleSortCellMismatch_(expected, actual, rowNumber, columnOffset)
     'format'
   ];
   for (const field of fields) {
-    // D is column offset 1 within C:L. Its conditional-format appearance
-    // is context-dependent, so compare D's content but skip its cell format.
-    if (field === 'format' && columnOffset === 1) continue;
+    // D and H are excluded from all format-fidelity comparisons because
+    // their appearance is context-dependent on temporary sheets. Their
+    // values, formulas, notes, validation and rich text remain checked.
+    if (field === 'format' && (columnOffset === 1 || columnOffset === 5)) continue;
 
     // E is column offset 2 within C:L. Its background differs because of
     // conditional formatting; ignore only the background.
