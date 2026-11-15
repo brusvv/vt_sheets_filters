@@ -362,10 +362,6 @@ function readSortVisibilityContext_(sheet, lastRow, knownSortData, perfTrace = n
 
     context.sheetId = sheet.getSheetId();
     context.sheetName = sheet.getName();
-    context.stateSheet = stateSheet;
-    context.stateMetadataValues = stateMetadataValues.map(row => row.slice());
-    context.filterStateColumns = filterColumns;
-    context.manualStateColumns = manualColumns;
     context.filterMetadata = filterMetadata.map(row => row.slice());
     context.manualMetadata = manualMetadata.map(row => row.slice());
     context.savedLastRow = savedLastRow;
