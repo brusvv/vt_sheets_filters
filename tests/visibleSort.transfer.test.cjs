@@ -115,6 +115,7 @@ function makeWorkbook(data, visible, options = {}) {
   const properties = new Map();
   let nextSheetId = 100;
   let uuidCounter = 0;
+  let activeSheet = null;
   const events = [];
   const targetGrid = new Map();
 
@@ -125,9 +126,16 @@ function makeWorkbook(data, visible, options = {}) {
   const workbook = {
     getId: () => 'spreadsheet-test-id',
     getSheetByName: name => Array.from(sheets.values()).find(sheet => sheet.name === name) || null,
+    getActiveSheet: () => activeSheet,
+    setActiveSheet(sheet) {
+      activeSheet = sheet;
+      events.push(['setActiveSheet', sheet.name]);
+      return sheet;
+    },
     insertSheet(name) {
       const sheet = createSheet(nextSheetId++, name, new Map());
       sheets.set(sheet.id, sheet);
+      activeSheet = sheet;
       events.push(['insertSheet', name]);
       if (options.failInsertStage) throw new Error('injected staging insert failure');
       return sheet;
@@ -156,6 +164,9 @@ function makeWorkbook(data, visible, options = {}) {
       hideSheet() {
         sheet.hidden = true;
         events.push(['hideSheet', name]);
+        if (activeSheet === sheet) {
+          activeSheet = Array.from(sheets.values()).find(candidate => !candidate.hidden) || null;
+        }
       },
       setHiddenRow(rowNumber, hidden) {
         if (hidden) sheet.hiddenRows.add(rowNumber);
@@ -178,8 +189,11 @@ function makeWorkbook(data, visible, options = {}) {
     return sheet;
   }
 
+  const novice = createSheet(9, 'Novice', new Map());
+  sheets.set(novice.id, novice);
   const target = createSheet(10, 'Intermediate', targetGrid);
   sheets.set(target.id, target);
+  activeSheet = target;
 
   data.forEach((row, index) => {
     const rowNumber = 3 + index;
@@ -265,6 +279,13 @@ function makeWorkbook(data, visible, options = {}) {
                 destinationCell.validation = clone(sourceCell.validation);
               } else if (copy.pasteType === 'PASTE_NORMAL') {
                 const copied = clone(sourceCell);
+                if (options.emptyRichTextStageColorMismatch &&
+                    destinationSheet !== target && copied.richText &&
+                    copied.richText.text === '') {
+                  copied.richText.style = Object.assign({}, copied.richText.style, {
+                    foregroundColor: '#ffffff'
+                  });
+                }
                 destinationSheet.grid.set(
                   gridKey(destinationRow, destinationColumn),
                   copied
@@ -743,4 +764,61 @@ test('the same operation cannot be replayed after successful transfer', () => {
   assert.equal(second.reason, 'DUPLICATE_TRANSFER_OPERATION_BLOCKED');
   assert.deepEqual(currentRows(fixture, 3, 3), afterFirst);
   assert.equal(fixture.events.filter(event => event[0] === 'insertSheet').length, 2);
+});
+
+test('empty-cell inherited rich-text style differences do not block staging fidelity', () => {
+  const data = [
+    makeRow('A', 10, 'A', 'low'),
+    makeRow('A', 30, 'C', 'high'),
+    makeRow('A', 20, 'B', 'middle')
+  ];
+  const fixture = makeWorkbook(data, [true, true, true], {
+    emptyRichTextStageColorMismatch: true
+  });
+  fixture.target.setCell(3, 4, {
+    richText: {
+      text: '',
+      linkUrl: null,
+      style: {foregroundColor: '#000000'}
+    },
+    format: {
+      getFontColors: '#000000'
+    }
+  });
+  const built = makePlan(fixture, data, [true, true, true]);
+
+  const result = runTransfer(fixture, built);
+
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal(fixture.getCell(3, 4).format.getFontColors, '#000000');
+});
+
+test('transfer restores the originally active sheet after staging cleanup', () => {
+  const data = [
+    makeRow('A', 10, 'A', 'low'),
+    makeRow('A', 30, 'C', 'high'),
+    makeRow('A', 20, 'B', 'middle')
+  ];
+  const fixture = makeWorkbook(data, [true, true, true]);
+  const built = makePlan(fixture, data, [true, true, true]);
+
+  const result = runTransfer(fixture, built);
+
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal(fixture.workbook.getActiveSheet().getName(), 'Intermediate');
+});
+
+test('transfer restores the originally active sheet when staging aborts', () => {
+  const data = [
+    makeRow('A', 10, 'A', 'low'),
+    makeRow('A', 30, 'C', 'high'),
+    makeRow('A', 20, 'B', 'middle')
+  ];
+  const fixture = makeWorkbook(data, [true, true, true], {failStageCopy: true});
+  const built = makePlan(fixture, data, [true, true, true]);
+
+  const result = runTransfer(fixture, built);
+
+  assert.equal(result.status, 'BLOCKED_STAGING');
+  assert.equal(fixture.workbook.getActiveSheet().getName(), 'Intermediate');
 });
