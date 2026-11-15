@@ -1,4 +1,4 @@
-# Visibility Probe v1.3.0
+# Visibility Probe v1.4.0
 
 Standalone diagnostic tool for comparing physical row visibility from Apps Script and the Advanced Google Sheets API. This experiment is isolated from production code and must be run only in a disposable spreadsheet / separate Apps Script project.
 
