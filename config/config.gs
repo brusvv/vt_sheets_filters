@@ -37,6 +37,38 @@ const CONFIG = {
 
   visibleSortTransferEnabled: false,
 
+  // Energy mask: производная колонка в _FilterState, по которой формулы
+  // Energy узнают, какие строки учитывать (видимость после фильтров И без
+  // сохранённых вручную скрытых строк). Столбец D и ManualState не меняются.
+  // Выключено: блок не создаётся и ничего не записывается (R5.1).
+  energyMask: {
+    enabled: false,
+
+    // Листы, для которых маска пишется. Пусто, пока R5.2-R5.4 не включены.
+    sheets: [],
+
+    schemaVersion: 1,
+    stateSheetName: '_FilterState',
+
+    // R1: метка версии схемы блока.
+    versionCol: 18,
+
+    // S, T, U: по одной колонке маски на лист. A:H (FilterState) и
+    // J:Q (ManualState) не пересекаются с блоком.
+    columns: {
+      Novice: 19,
+      Intermediate: 20,
+      Advanced: 21
+    },
+
+    // Строка 1 - заголовок, строка 2 - статус, данные с firstRow (строка 3).
+    headerRow: 1,
+    statusRow: 2,
+
+    statusOk: 'OK',
+    statusStale: 'STALE'
+  },
+
   // Смещения относительно диапазона C:L.
   sortScoreOffset: 3,
   sortDotsOffset: 7,
