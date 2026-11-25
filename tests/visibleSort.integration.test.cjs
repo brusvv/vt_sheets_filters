@@ -1,9 +1,15 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
 const {
   makeRow,
   manualKey,
   createMockWorkbook,
   autoSortOptions
 } = require('./helpers/mockWorkbook.cjs');
+
+function readGameRows(fixture) {
+  return fixture.gameSheet
     .getRange(
       fixture.firstRow,
       3,
