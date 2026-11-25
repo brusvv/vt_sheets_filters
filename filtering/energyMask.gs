@@ -372,6 +372,307 @@ function syncEnergyMaskIfEnabled_(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Точки интеграции (R5.2). Все функции ниже не бросают исключений: ошибка
+// Energy mask не должна ломать фильтрацию и сохранение ручных строк.
+// При выключенном режиме для листа они не обращаются ни к одному листу.
+// ---------------------------------------------------------------------------
+
+/**
+ * После успешного обновления FilterState строит маску из уже подготовленного
+ * результата фильтрации и сохранённых ManualState-строк и записывает её.
+ * Если маску построить или записать нельзя, помечает её STALE.
+ *
+ * @param {Sheet} sheet Игровой лист.
+ * @param {Sheet|null} filterStateSheet Лист _FilterState (или null).
+ * @param {boolean[]} filterVisibility Результат фильтров по строкам данных.
+ * @param {Set<number>|number[]|null} manualRowsToHide Физические номера
+ *   сохранённых ручных строк.
+ * @param {number} lastRow Последняя строка данных.
+ * @param {Object|null} perfTrace
+ * @return {{skipped: boolean, ok: boolean, reason: (string|null)}}
+ */
+function syncEnergyMaskAfterFilters_(
+  sheet,
+  filterStateSheet,
+  filterVisibility,
+  manualRowsToHide,
+  lastRow,
+  perfTrace
+) {
+  if (!sheet || !isEnergyMaskEnabledForSheet_(sheet)) {
+    return {skipped: true, ok: true, reason: 'DISABLED'};
+  }
+
+  try {
+    const stateSheet = filterStateSheet || getEnergyMaskStateSheet_(sheet);
+
+    if (!stateSheet) {
+      throw new Error('Лист _FilterState не найден.');
+    }
+
+    const mask = computeEnergyMask_(
+      filterVisibility,
+      manualRowsToHide,
+      CONFIG.firstRow
+    );
+
+    const result = writeEnergyMask_(stateSheet, sheet, mask, lastRow);
+
+    if (!result.ok) {
+      return failEnergyMaskSync_(
+        sheet,
+        stateSheet,
+        result.reason,
+        'ENERGY_MASK_SYNC_FAILED',
+        perfTrace
+      );
+    }
+
+    return {skipped: false, ok: true, reason: null};
+
+  } catch (error) {
+    return failEnergyMaskSync_(
+      sheet,
+      filterStateSheet,
+      'ERROR: ' + (error && error.message ? error.message : String(error)),
+      'ENERGY_MASK_SYNC_FAILED',
+      perfTrace
+    );
+  }
+}
+
+/**
+ * Помечает маску листа как STALE по месту вызова (досрочный выход или
+ * исключение). Не бросает исключений.
+ *
+ * @param {Sheet|null} sheet
+ * @param {string} reason
+ * @param {Object|null} perfTrace
+ * @param {Sheet|null} stateSheet Лист _FilterState, если уже известен.
+ * @return {{skipped: boolean, ok: boolean, reason: (string|null)}}
+ */
+function markEnergyMaskStaleForSheet_(sheet, reason, perfTrace, stateSheet) {
+  if (!sheet || !isEnergyMaskEnabledForSheet_(sheet)) {
+    return {skipped: true, ok: true, reason: 'DISABLED'};
+  }
+
+  try {
+    const target = stateSheet || getEnergyMaskStateSheet_(sheet);
+
+    if (!target) {
+      emitEnergyMaskEvent_(perfTrace, 'ENERGY_MASK_MARK_STALE_FAILED', {
+        sheet: getEnergyMaskSheetName_(sheet),
+        reason: reason,
+        detail: 'NO_STATE_SHEET'
+      });
+
+      return {skipped: false, ok: false, reason: 'NO_STATE_SHEET'};
+    }
+
+    const result = markEnergyMaskStale_(target, sheet);
+
+    emitEnergyMaskEvent_(
+      perfTrace,
+      result.ok ? 'ENERGY_MASK_MARKED_STALE' : 'ENERGY_MASK_MARK_STALE_FAILED',
+      {
+        sheet: getEnergyMaskSheetName_(sheet),
+        reason: reason,
+        detail: result.reason
+      }
+    );
+
+    return {skipped: false, ok: result.ok, reason: result.reason};
+
+  } catch (error) {
+    return {
+      skipped: false,
+      ok: false,
+      reason: 'ERROR: ' + (error && error.message ? error.message : String(error))
+    };
+  }
+}
+
+/**
+ * Save Manual Hidden Rows: вызывается после проверок и ДО записи ManualState.
+ * Если маска была актуальна (OK), помечает её STALE: при любом сбое Save
+ * маска так и останется STALE и не будет выдана за актуальную. Если маска уже
+ * STALE или не создана, Save её не трогает.
+ *
+ * @param {Sheet} sheet
+ * @param {Sheet|null} filterStateSheet
+ * @param {Object|null} perfTrace
+ * @return {{active: boolean, reason: (string|null)}} Токен для
+ *   finishEnergyMaskManualSave_.
+ */
+function beginEnergyMaskManualSave_(sheet, filterStateSheet, perfTrace) {
+  if (!sheet || !isEnergyMaskEnabledForSheet_(sheet)) {
+    return {active: false, reason: 'DISABLED'};
+  }
+
+  try {
+    const stateSheet = filterStateSheet || getEnergyMaskStateSheet_(sheet);
+
+    if (!stateSheet) {
+      return {active: false, reason: 'NO_STATE_SHEET'};
+    }
+
+    const status = readEnergyMaskStatus_(stateSheet, sheet);
+
+    if (!status.ok) {
+      return {
+        active: false,
+        reason: status.stale ? 'MASK_STALE' : 'MASK_NOT_INITIALIZED'
+      };
+    }
+
+    const marked = markEnergyMaskStale_(stateSheet, sheet);
+
+    if (!marked.ok) {
+      emitEnergyMaskEvent_(perfTrace, 'ENERGY_MASK_MARK_STALE_FAILED', {
+        sheet: getEnergyMaskSheetName_(sheet),
+        reason: 'MANUAL_SAVE_BEGIN',
+        detail: marked.reason
+      });
+
+      return {active: false, reason: marked.reason};
+    }
+
+    return {active: true, reason: null};
+
+  } catch (error) {
+    return {
+      active: false,
+      reason: 'ERROR: ' + (error && error.message ? error.message : String(error))
+    };
+  }
+}
+
+/**
+ * Save Manual Hidden Rows: вызывается ПОСЛЕ успешной записи ManualState.
+ * Пересчитывает маску как filterVisible AND NOT savedManualRow и записывает
+ * её со статусом OK. Не бросает исключений: ключи ManualState к этому моменту
+ * уже сохранены и не зависят от результата.
+ *
+ * @param {{active: boolean, reason: (string|null)}} guard Токен из
+ *   beginEnergyMaskManualSave_.
+ * @param {Sheet} sheet
+ * @param {Sheet|null} filterStateSheet
+ * @param {boolean[]} filterVisibility Значения _FilterState!D на момент Save.
+ * @param {number[]} savedManualRows Физические номера сохранённых строк.
+ * @param {number} lastRow
+ * @param {Object|null} perfTrace
+ * @return {{skipped: boolean, ok: boolean, reason: (string|null)}}
+ */
+function finishEnergyMaskManualSave_(
+  guard,
+  sheet,
+  filterStateSheet,
+  filterVisibility,
+  savedManualRows,
+  lastRow,
+  perfTrace
+) {
+  if (!guard || guard.reason === 'DISABLED') {
+    return {skipped: true, ok: true, reason: 'DISABLED'};
+  }
+
+  if (!guard.active) {
+    if (guard.reason === 'MASK_STALE') {
+      notifyEnergyMaskStale_();
+    }
+
+    return {skipped: true, ok: true, reason: guard.reason};
+  }
+
+  try {
+    const stateSheet = filterStateSheet || getEnergyMaskStateSheet_(sheet);
+
+    if (!stateSheet) {
+      throw new Error('Лист _FilterState не найден.');
+    }
+
+    const mask = computeEnergyMask_(
+      filterVisibility,
+      savedManualRows,
+      CONFIG.firstRow
+    );
+
+    const result = writeEnergyMask_(stateSheet, sheet, mask, lastRow);
+
+    if (!result.ok) {
+      return failEnergyMaskSync_(
+        sheet,
+        stateSheet,
+        result.reason,
+        'ENERGY_MASK_SYNC_FAILED',
+        perfTrace
+      );
+    }
+
+    return {skipped: false, ok: true, reason: null};
+
+  } catch (error) {
+    return failEnergyMaskSync_(
+      sheet,
+      filterStateSheet,
+      'ERROR: ' + (error && error.message ? error.message : String(error)),
+      'ENERGY_MASK_SYNC_FAILED',
+      perfTrace
+    );
+  }
+}
+
+function failEnergyMaskSync_(sheet, stateSheet, reason, eventName, perfTrace) {
+  emitEnergyMaskEvent_(perfTrace, eventName, {
+    sheet: getEnergyMaskSheetName_(sheet),
+    reason: reason
+  });
+
+  console.warn(
+    '[ENERGY MASK] ' + getEnergyMaskSheetName_(sheet) + ': ' + reason
+  );
+
+  // Маску нельзя считать актуальной: пытаемся пометить STALE.
+  markEnergyMaskStaleForSheet_(sheet, reason, perfTrace, stateSheet || null);
+
+  return {skipped: false, ok: false, reason: reason};
+}
+
+function getEnergyMaskStateSheet_(sheet) {
+  try {
+    const spreadsheet = typeof sheet.getParent === 'function'
+      ? sheet.getParent()
+      : SpreadsheetApp.getActiveSpreadsheet();
+
+    return spreadsheet.getSheetByName(CONFIG.energyMask.stateSheetName) || null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function emitEnergyMaskEvent_(perfTrace, name, metadata) {
+  try {
+    if (perfTrace && typeof triggerPerfEvent_ === 'function') {
+      triggerPerfEvent_(perfTrace, name, metadata);
+    }
+  } catch (error) {
+    // Диагностика не должна влиять на работу.
+  }
+}
+
+function notifyEnergyMaskStale_() {
+  try {
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      'Energy mask устарела: примените фильтры, чтобы обновить Energy.',
+      'Manual exclusions',
+      5
+    );
+  } catch (error) {
+    // Уведомление необязательно.
+  }
+}
+
 function getEnergyMaskSheetName_(sheet) {
   return typeof sheet === 'string' ? sheet : sheet.getName();
 }

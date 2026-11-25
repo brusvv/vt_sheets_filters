@@ -19,6 +19,7 @@ const sourceFiles = [
   'filtering/filterVisibility.gs',
   'filtering/rowVisibility.gs',
   'filtering/filters.gs',
+  'filtering/energyMask.gs',
   'sorting/sortOperations.gs'
 ];
 
@@ -154,6 +155,9 @@ function createMockWorkbook(options = {}) {
     getValue() {
       return this.getValues()[0][0];
     }
+    setValue(value) {
+      this.setValues([[value]]);
+    }
     setValues(values) {
       if (!Array.isArray(values) || values.length !== this.numRows) {
         throw new Error('Mock setValues row mismatch');
@@ -226,6 +230,14 @@ function createMockWorkbook(options = {}) {
       this.writes = [];
     }
     getName() { return this.name; }
+    getMaxRows() { return this.grid.length; }
+    getMaxColumns() { return this.grid[0].length; }
+    insertColumnsAfter(after, count) {
+      this.grid.forEach(row => {
+        for (let i = 0; i < count; i++) row.push('');
+      });
+      events.push(['insertColumnsAfter', this.name, after, count]);
+    }
     getSheetId() { return this.id; }
     getParent() { return this.parent; }
     getLastRow() { return this.lastRow; }
