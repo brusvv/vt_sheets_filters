@@ -13,6 +13,7 @@ const sourceFiles = [
   'rankscroller/rankScrollerCalculator.gs',
   'rankscroller/rankScrollerEngine.gs',
   'rankscroller/rankScroller.gs',
+  'filtering/energyMask.gs',
   'filtering/filters.gs',
   'filtering/filterOperations.gs'
 ];
