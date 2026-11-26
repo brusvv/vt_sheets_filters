@@ -1845,3 +1845,7 @@ The staged visible-row transfer implementation and its rollout gate are document
 A read-only comparison and repeated benchmark for Apps Script physical row-visibility methods versus Advanced Sheets API `rowMetadata` is documented in [docs/visibility-probe.md](docs/visibility-probe.md). The standalone probe and both manifest variants are under [experiments/visibility-probe](experiments/visibility-probe/README.md).
 
 The experiment is deliberately isolated and is not part of production sorting/filtering. It does not change the Resolver or enable Visible Sort Transfer. Live scenario reports and benchmark measurements must be collected on a disposable Google Spreadsheet; Node tests do not substitute for that integration test.
+
+## 12. Стандарт анализа, проверки и аудита
+
+Общие критерии анализа архитектуры, независимой проверки изменений Codex / Claude, fault-injection, concurrency, тестирования, CI и live Google Sheets acceptance вынесены в отдельный документ: [`docs/AUDIT_STANDARD.md`](docs/AUDIT_STANDARD.md).
