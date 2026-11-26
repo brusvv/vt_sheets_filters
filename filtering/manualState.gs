@@ -284,9 +284,16 @@ function saveManualHiddenRows() {
 
     // Если маска была OK, но её не удалось заранее инвалидировать, нельзя
     // менять ManualState: иначе прежняя маска останется ложно помеченной OK.
-    if (energyMaskGuard.reason === 'MARK_STALE_FAILED') {
+    const safeToContinueWithoutMask = [
+      'DISABLED',
+      'MASK_STALE',
+      'MASK_NOT_INITIALIZED'
+    ].includes(energyMaskGuard.reason);
+
+    if (!energyMaskGuard.active && !safeToContinueWithoutMask) {
       throw new Error(
-        'Не удалось пометить Energy mask как STALE. ' +
+        'Не удалось подтвердить безопасное состояние Energy mask (' +
+        energyMaskGuard.reason + '). ' +
         'ManualState не сохранён; повторите операцию.'
       );
     }
