@@ -43,6 +43,7 @@ function applyFilters(
 
   let status = 'SUCCESS';
   let errorMetadata = {};
+  let energyMaskSheet = null;
 
   try {
     // --------------------------------------------------
@@ -52,6 +53,8 @@ function applyFilters(
     let stepStarted = Date.now();
 
     const sheet = targetSheet || getTargetSheet();
+
+    energyMaskSheet = sheet;
 
     const sheetLastRow = knownLastRow !== null
       ? knownLastRow
@@ -66,6 +69,14 @@ function applyFilters(
 
     if (sheetLastRow < CONFIG.firstRow) {
       status = 'EMPTY_SHEET';
+
+      // Старые значения маски больше не соответствуют пустому листу.
+      markEnergyMaskStaleForSheet_(
+        sheet,
+        'FILTERS_EMPTY_SHEET',
+        perfTrace,
+        null
+      );
 
       triggerPerfEnd_(perfTrace, status, {
         sheet: sheet.getName(),
@@ -219,6 +230,14 @@ function applyFilters(
     if (lastRow < CONFIG.firstRow) {
       status = 'EMPTY_SHEET';
 
+      // В листе больше нет игровых строк: прежнюю маску нельзя оставлять OK.
+      markEnergyMaskStaleForSheet_(
+        sheet,
+        'FILTERS_NO_SCENARIO_ROWS',
+        perfTrace,
+        null
+      );
+
       triggerPerfEnd_(perfTrace, status, {
         sheet: sheet.getName(),
         lastRow: lastRow
@@ -277,6 +296,13 @@ function applyFilters(
         sheet: sheet.getName(),
         reason: reason
       });
+
+      markEnergyMaskStaleForSheet_(
+        sheet,
+        'FILTERS_ABORTED_UNRESOLVED_SORT_VISIBILITY',
+        perfTrace,
+        null
+      );
 
       return {
         status: status,
@@ -348,6 +374,13 @@ function applyFilters(
         sheet: sheet.getName(),
         reason: reason
       });
+
+      markEnergyMaskStaleForSheet_(
+        sheet,
+        'FILTERS_ABORTED_UNRESOLVED_MANUALSTATE',
+        perfTrace,
+        filterState.filterStateSheet
+      );
 
       return {
         status: status,
@@ -478,6 +511,19 @@ function applyFilters(
     );
 
     // --------------------------------------------------
+    // 10a. Energy mask (после успешной записи FilterState)
+    // --------------------------------------------------
+
+    syncEnergyMaskAfterFilters_(
+      sheet,
+      filterState.filterStateSheet,
+      newFilterVisibility,
+      visibilityData.manualRowsToHide,
+      lastRow,
+      perfTrace
+    );
+
+    // --------------------------------------------------
     // 11. Итоговая информация
     // --------------------------------------------------
 
@@ -515,6 +561,14 @@ function applyFilters(
       message: error.message,
       stack: error.stack
     };
+
+    // Состояние могло быть применено частично: маска не актуальна.
+    markEnergyMaskStaleForSheet_(
+      energyMaskSheet,
+      'APPLY_FILTERS_ERROR',
+      perfTrace,
+      null
+    );
 
     throw error;
 

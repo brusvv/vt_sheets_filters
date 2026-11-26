@@ -249,6 +249,7 @@ function saveManualHiddenRows() {
     // --------------------------------------------------
 
     const hiddenKeys = [];
+    const hiddenRows = [];
 
     for (let i = 0; i < numRows; i++) {
       const row = data[i];
@@ -264,12 +265,38 @@ function saveManualHiddenRows() {
         hiddenKeys.push(
           getManualRecordKey_(row)
         );
+
+        hiddenRows.push(sheetRow);
       }
     }
 
     // --------------------------------------------------
     // 4. Сохранение ManualState
     // --------------------------------------------------
+
+    // Energy mask: перед записью ManualState помечаем маску STALE; при сбое
+    // Save она останется STALE и не будет выдана за актуальную.
+    const energyMaskGuard = beginEnergyMaskManualSave_(
+      sheet,
+      filterStateSheet,
+      null
+    );
+
+    // Если маска была OK, но её не удалось заранее инвалидировать, нельзя
+    // менять ManualState: иначе прежняя маска останется ложно помеченной OK.
+    const safeToContinueWithoutMask = [
+      'DISABLED',
+      'MASK_STALE',
+      'MASK_NOT_INITIALIZED'
+    ].includes(energyMaskGuard.reason);
+
+    if (!energyMaskGuard.active && !safeToContinueWithoutMask) {
+      throw new Error(
+        'Не удалось подтвердить безопасное состояние Energy mask (' +
+        energyMaskGuard.reason + '). ' +
+        'ManualState не сохранён; повторите операцию.'
+      );
+    }
 
     const columns = getManualStateColumns(sheet);
 
@@ -332,6 +359,20 @@ function saveManualHiddenRows() {
         )
         .clearContent();
     }
+
+    // --------------------------------------------------
+    // 5a. Energy mask (после успешной записи ManualState)
+    // --------------------------------------------------
+
+    finishEnergyMaskManualSave_(
+      energyMaskGuard,
+      sheet,
+      filterStateSheet,
+      filterVisibility,
+      hiddenRows,
+      lastRow,
+      null
+    );
 
     // --------------------------------------------------
     // 6. Результат
