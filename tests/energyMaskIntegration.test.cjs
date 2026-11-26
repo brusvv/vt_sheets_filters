@@ -384,6 +384,31 @@ test('R5.2-7b: сбой записи ManualState оставляет маску S
   assert.equal(writes[0].values[0][0], 'STALE');
 });
 
+test('R5.2-7e: если не удалось пометить OK-маску как STALE, Save не меняет ManualState', function() {
+  const {workbook} = createWorkbook();
+
+  setDots(workbook, '');
+  apply(workbook);
+
+  const keysBefore = manualKeys(workbook).slice();
+  const countBefore = manualCount(workbook);
+  const writesBefore = workbook.stateWrites.length;
+
+  workbook.gameSheet.hideRows(ROW_DOTTS, 1);
+
+  // Сбой именно при попытке перевести статус OK -> STALE.
+  throwOnWrite(workbook, args => args[1] >= 18, 'stale marker failed');
+
+  assert.throws(() => save(workbook), /ManualState не сохранён/);
+
+  assert.equal(statusOf(workbook), 'OK');
+  assert.equal(manualCount(workbook), countBefore);
+  assert.deepEqual(manualKeys(workbook), keysBefore);
+
+  const writes = workbook.stateWrites.slice(writesBefore);
+  assert.equal(writes.length, 0, 'ни ManualState, ни маска не изменены');
+});
+
 test('R5.2-7c: Save при уже устаревшей маске сохраняет ManualState, маску не трогает', function() {
   const {workbook, fixture} = createWorkbook();
 

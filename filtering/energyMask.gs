@@ -535,7 +535,7 @@ function beginEnergyMaskManualSave_(sheet, filterStateSheet, perfTrace) {
         detail: marked.reason
       });
 
-      return {active: false, reason: marked.reason};
+      return {active: false, reason: 'MARK_STALE_FAILED', detail: marked.reason};
     }
 
     return {active: true, reason: null};
