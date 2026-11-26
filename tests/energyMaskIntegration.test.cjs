@@ -405,6 +405,30 @@ test('R5.2-7b: сбой записи ManualState оставляет маску S
   assert.equal(writes[0].values[0][0], 'STALE');
 });
 
+test('R5.2-7f: если не удалось прочитать статус маски, Save не меняет ManualState', function() {
+  const {workbook} = createWorkbook();
+
+  setDots(workbook, '');
+  apply(workbook);
+
+  const keysBefore = manualKeys(workbook).slice();
+  const countBefore = manualCount(workbook);
+  const writesBefore = workbook.stateWrites.length;
+
+  workbook.gameSheet.hideRows(ROW_DOTTS, 1);
+
+  workbook.project.readEnergyMaskStatus_ = function() {
+    throw new Error('status read failed');
+  };
+
+  assert.throws(() => save(workbook), /Energy mask.*ManualState не сохранён/);
+
+  assert.equal(statusOf(workbook), 'OK');
+  assert.equal(manualCount(workbook), countBefore);
+  assert.deepEqual(manualKeys(workbook), keysBefore);
+  assert.equal(workbook.stateWrites.length, writesBefore);
+});
+
 test('R5.2-7e: если не удалось пометить OK-маску как STALE, Save не меняет ManualState', function() {
   const {workbook} = createWorkbook();
 
