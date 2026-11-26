@@ -70,6 +70,14 @@ function applyFilters(
     if (sheetLastRow < CONFIG.firstRow) {
       status = 'EMPTY_SHEET';
 
+      // Старые значения маски больше не соответствуют пустому листу.
+      markEnergyMaskStaleForSheet_(
+        sheet,
+        'FILTERS_EMPTY_SHEET',
+        perfTrace,
+        null
+      );
+
       triggerPerfEnd_(perfTrace, status, {
         sheet: sheet.getName(),
         lastRow: CONFIG.firstRow - 1
@@ -221,6 +229,14 @@ function applyFilters(
 
     if (lastRow < CONFIG.firstRow) {
       status = 'EMPTY_SHEET';
+
+      // В листе больше нет игровых строк: прежнюю маску нельзя оставлять OK.
+      markEnergyMaskStaleForSheet_(
+        sheet,
+        'FILTERS_NO_SCENARIO_ROWS',
+        perfTrace,
+        null
+      );
 
       triggerPerfEnd_(perfTrace, status, {
         sheet: sheet.getName(),

@@ -153,6 +153,27 @@ function throwOnWrite(workbook, predicate, message = 'injected failure') {
 
 // --------------------------------------------------------------- 1, 2
 
+test('R5.2-1a: пустой лист не оставляет предыдущую маску со статусом OK', function() {
+  const {workbook} = createWorkbook();
+
+  setDots(workbook, '');
+  apply(workbook);
+  assert.equal(statusOf(workbook), 'OK');
+
+  // Сценарий 1: лист действительно стал пустым.
+  workbook.gameSheet.setLastRow(FIRST - 1);
+  apply(workbook);
+  assert.equal(statusOf(workbook), 'STALE');
+
+  // Сценарий 2: лист физически содержит ячейки, но игровых строк больше нет.
+  workbook.gameSheet.setLastRow(workbook.lastRow);
+  for (let row = FIRST - 1; row < workbook.gameSheet.grid.length; row++) {
+    workbook.gameSheet.grid[row][2] = '';
+  }
+  apply(workbook);
+  assert.equal(statusOf(workbook), 'STALE');
+});
+
 test('R5.2-1: applyFilters записывает маску и статус OK после успешной фильтрации', function() {
   const {workbook, fixture} = createWorkbook();
 
